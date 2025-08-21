@@ -1,7 +1,10 @@
 # api/endpoints/cases.py
 from fastapi import APIRouter, HTTPException
-from typing import Optional, List
-from api.models.api_models import CaseActionRequest
+from typing import Optional
+import json
+from pathlib import Path
+from datetime import datetime
+import discord
 
 router = APIRouter(prefix="/api/cases", tags=["cases"])
 
@@ -15,97 +18,113 @@ def initialize_dependencies(moderation_manager_instance, bot_instance):
     bot = bot_instance
 
 @router.get("/")
-async def get_cases(user_id: Optional[int] = None, status: Optional[str] = None, limit: int = 100):
-    """Get moderation cases with optional filtering"""
+async def get_all_cases():
+    """Get all moderation cases"""
     try:
-        if not moderation_manager:
+        cases = moderation_manager.get_all_cases()
+        return {"cases": cases}
+    except Exception as e:
+        return {"error": str(e), "cases": []}
+
+@router.get("/{user_id}/{case_number}")
+async def get_specific_case(user_id: int, case_number: int):
+    """Get a specific case by user ID and case number"""
+    try:
+        case = moderation_manager.get_user_case_by_number(user_id, case_number)
+        if case:
+            return {"case": case}
+        else:
+            return {"error": "Case not found", "case": None}
+    except Exception as e:
+        return {"error": str(e), "case": None}
+
+@router.put("/{user_id}/{case_number}")
+async def update_case(user_id: int, case_number: int, updates: dict):
+    """Update a specific case"""
+    try:
+        success = moderation_manager.update_case(user_id, case_number, updates)
+        return {"success": success}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@router.delete("/{user_id}/{case_number}")
+async def delete_case(user_id: int, case_number: int):
+    """Delete a specific case"""
+    try:
+        success = moderation_manager.delete_case(user_id, case_number)
+        return {"success": success}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+@router.get("/enhanced")
+async def get_cases_enhanced():
+    """Get all cases with enhanced user information including avatars"""
+    try:
+        cases_path = Path("cases/user_moderation_data.json")
+        if not cases_path.exists():
             return {"cases": []}
+        
+        with open(cases_path, 'r', encoding='utf-8') as f:
+            user_cases = json.load(f)
         
         all_cases = []
         
-        if user_id:
-            # Get cases for specific user
-            user_cases = moderation_manager.case_manager.get_user_cases(user_id, status)
-            for case in user_cases:
-                case["user_id"] = user_id
-            all_cases = user_cases
-        else:
-            # Get all cases
-            for uid, user_data in moderation_manager.user_data.items():
-                cases = user_data.get("cases", [])
-                if status:
-                    cases = [case for case in cases if case.get("status") == status]
-                
-                for case in cases:
-                    case["user_id"] = int(uid)
-                    all_cases.append(case)
+        # Get Discord bot instance for user lookups
+        guild = None
+        if bot and bot.is_ready() and bot.guilds:
+            guild = bot.guilds[0]
         
-        # Sort by creation date (newest first)
-        all_cases.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+        for user_id, user_data in user_cases.items():
+            # Try to get Discord user info
+            discord_user = None
+            user_avatar_url = None
+            
+            if guild:
+                try:
+                    discord_user = guild.get_member(int(user_id))
+                    if discord_user:
+                        user_avatar_url = str(discord_user.display_avatar.url)
+                except:
+                    try:
+                        discord_user = await bot.fetch_user(int(user_id))
+                        if discord_user:
+                            user_avatar_url = str(discord_user.display_avatar.url)
+                    except:
+                        pass
+            
+            for case in user_data.get('cases', []):
+                case_data = {
+                    'case_number': case.get('case_number'),
+                    'user_id': user_id,
+                    'username': case.get('username') or (discord_user.name if discord_user else 'Unknown'),
+                    'display_name': case.get('display_name') or (discord_user.display_name if discord_user else None),
+                    'user_avatar_url': user_avatar_url,
+                    'action_type': case.get('action_taken', 'Unknown'),
+                    'moderator_id': case.get('moderator_id'),
+                    'moderator_name': case.get('moderator_name', 'Unknown'),
+                    'reason': case.get('reason', ''),
+                    'internal_comment': case.get('internal_comment', ''),
+                    'severity': case.get('severity', 'Low'),
+                    'status': case.get('status', 'Open'),
+                    'created_at': case.get('timestamp'),
+                    'resolved_at': case.get('resolved_at'),
+                    'duration': case.get('duration'),
+                    'dm_sent': case.get('dm_sent', False),
+                    'resolvable': case.get('resolvable', 'Yes'),
+                    'tags': case.get('tags', []),
+                    'flagged_message': case.get('flagged_message'),
+                    'message_history': case.get('message_history', []),
+                    'attachments': case.get('attachments', []),
+                    'resolution_method': case.get('resolution_method'),
+                    'resolution_comment': case.get('resolution_comment'),
+                    'resolved_by_name': case.get('resolved_by_name')
+                }
+                all_cases.append(case_data)
         
-        return {
-            "cases": all_cases[:limit],
-            "total": len(all_cases)
-        }
+        # Sort by case number (newest first)
+        all_cases.sort(key=lambda x: x.get('case_number', 0), reverse=True)
         
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.post("/{user_id}")
-async def create_case(user_id: int, case_data: CaseActionRequest):
-    """Create a new moderation case"""
-    try:
-        if not moderation_manager or not bot:
-            raise HTTPException(status_code=503, detail="Moderation system not available")
-        
-        guild = bot.guilds[0] if bot.guilds else None
-        if not guild:
-            raise HTTPException(status_code=404, detail="No guild connected")
-        
-        member = guild.get_member(user_id)
-        if not member:
-            raise HTTPException(status_code=404, detail="User not found")
-        
-        # Prepare case data
-        action_data = {
-            "action_type": case_data.action_type,
-            "reason": case_data.reason,
-            "severity": case_data.severity,
-            "duration": case_data.duration,
-            "dm_sent": case_data.send_dm,
-            "moderator_name": "API",  # This should be updated to use actual moderator
-            "display_name": member.display_name,
-            "username": member.name
-        }
-        
-        # Create the case
-        case_number = await moderation_manager.create_moderation_case(user_id, action_data)
-        
-        return {
-            "success": True,
-            "case_number": case_number,
-            "message": f"Case #{case_number} created for {member.display_name}"
-        }
+        return {"cases": all_cases}
         
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.put("/{user_id}/{case_number}/resolve")
-async def resolve_case(user_id: int, case_number: int, resolution_comment: str):
-    """Resolve a moderation case"""
-    try:
-        if not moderation_manager:
-            raise HTTPException(status_code=503, detail="Moderation system not available")
-        
-        success = moderation_manager.case_manager.resolve_case(
-            user_id, case_number, resolution_comment, "api"
-        )
-        
-        if success:
-            moderation_manager.save_user_data()
-            return {"success": True, "message": f"Case #{case_number} resolved"}
-        else:
-            raise HTTPException(status_code=404, detail="Case not found or already resolved")
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"error": str(e)}, 500

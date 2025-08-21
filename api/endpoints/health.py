@@ -1,15 +1,10 @@
 # api/endpoints/health.py
 from fastapi import APIRouter, HTTPException
 from datetime import datetime
-import psutil
-import platform
-
-# Global imports will be updated after reorganization
-from core.settings import bot_settings
 
 router = APIRouter(prefix="/health", tags=["health"])
 
-# These will be injected via dependency injection
+# Global dependencies
 bot = None
 ollama = None
 modstring_manager = None
@@ -58,7 +53,7 @@ async def api_health_check():
             "integrations": {
                 "active_modstrings": len(modstring_manager.active_modstrings) if modstring_manager else 0,
                 "word_lists": len(modstring_manager.word_lists) if modstring_manager else 0,
-                "last_modstring_sync": modstring_manager.last_sync if modstring_manager else None
+                "last_modstring_sync": modstring_manager.last_sync.isoformat() if modstring_manager and modstring_manager.last_sync else None
             },
             "timestamp": datetime.now().isoformat()
         }

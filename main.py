@@ -46,13 +46,21 @@ async def main():
     try:
         deps = container.get_all_dependencies()
         initialize_api_dependencies(
-            bot, deps['config'], deps['logger'], deps['ollama'],
-            deps['moderation_manager'], deps['deleted_message_logger'],
-            deps['activity_tracker'], None, deps['modstring_manager']  # bot_settings will be imported directly
+            bot, 
+            deps['config'], 
+            deps['logger'], 
+            deps['ollama'],
+            deps['moderation_manager'], 
+            deps['deleted_message_logger'],
+            deps['activity_tracker'], 
+            deps.get('bot_settings') or deps.get('settings'),  # ✅ FIXED: Get actual bot_settings
+            deps['modstring_manager']
         )
         print(f"{Fore.GREEN}✅ API dependencies initialized{Style.RESET_ALL}")
     except Exception as e:
         print(f"{Fore.RED}❌ API initialization error: {e}{Style.RESET_ALL}")
+        import traceback
+        traceback.print_exc()  # ✅ ADDED: Better error debugging
     
     # Start API server
     if start_api_server():

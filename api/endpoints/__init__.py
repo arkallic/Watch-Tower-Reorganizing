@@ -1,6 +1,7 @@
 # api/endpoints/__init__.py
 """
-API endpoints package
+API endpoints package for Watch Tower Bot
+All endpoint modules are imported here for easy access
 """
 
 # Import all endpoint modules
@@ -10,7 +11,11 @@ from . import setup
 from . import users
 from . import cases
 from . import statistics
-
+from . import moderators
+from . import analytics
+from . import settings
+from . import spotlight
+from . import system
 
 __all__ = [
     'health',
@@ -18,5 +23,10 @@ __all__ = [
     'setup',
     'users',
     'cases',
-    'statistics'
+    'statistics',
+    'moderators',
+    'analytics',
+    'settings',
+    'spotlight',
+    'system'
 ]
