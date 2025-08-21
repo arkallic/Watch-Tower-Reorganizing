@@ -4,7 +4,6 @@ from colorama import Fore, Style
 
 # Import all components
 from .config_manager import ConfigManager
-from .settings import bot_settings
 from utils.logger import Logger
 from utils.report_generator import ReportGenerator
 from utils.data_persistence import DataPersistence
@@ -32,6 +31,15 @@ class DependencyContainer:
             self.dependencies['config'] = ConfigManager()
             self.dependencies['logger'] = Logger()
             self.dependencies['data_persistence'] = DataPersistence()
+            
+            # Import and store bot_settings
+            try:
+                from core.settings import bot_settings
+                self.dependencies['bot_settings'] = bot_settings
+                print(f"{Fore.GREEN}✅ bot_settings imported and stored{Style.RESET_ALL}")
+            except Exception as e:
+                print(f"{Fore.RED}❌ Failed to import bot_settings: {e}{Style.RESET_ALL}")
+                # Don't fail completely, just log the error
             
             # Integrations
             self.dependencies['ollama'] = OllamaClient()
@@ -64,6 +72,8 @@ class DependencyContainer:
             
         except Exception as e:
             print(f"{Fore.RED}❌ Dependency initialization failed: {e}{Style.RESET_ALL}")
+            import traceback
+            traceback.print_exc()
             raise
     
     def initialize_bot_dependent_components(self, bot):

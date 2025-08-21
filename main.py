@@ -36,15 +36,32 @@ async def main():
     container.initialize_all_dependencies()
     print(f"{Fore.GREEN}✅ Dependencies initialized{Style.RESET_ALL}")
     
+    # Debug: Print available dependencies
+    deps = container.get_all_dependencies()
+    print(f"{Fore.YELLOW}🔍 Available dependencies: {list(deps.keys())}{Style.RESET_ALL}")
+    
     # Create and configure bot
     bot = WatchTowerBot()
     container.initialize_bot_dependent_components(bot)
-    bot.inject_dependencies(container.get_all_dependencies())
+    bot.inject_dependencies(deps)
     print(f"{Fore.GREEN}✅ Bot configured{Style.RESET_ALL}")
     
     # Initialize API dependencies
     try:
-        deps = container.get_all_dependencies()
+        # Check if bot_settings exists and fallback if needed
+        bot_settings_instance = deps.get('bot_settings')
+        if bot_settings_instance is None:
+            print(f"{Fore.YELLOW}⚠️ bot_settings not found in dependencies, using config instead{Style.RESET_ALL}")
+            # Try to get it from config
+            config = deps.get('config')
+            if config and hasattr(config, 'settings'):
+                bot_settings_instance = config.settings
+            else:
+                # Import directly as fallback
+                from core.settings import bot_settings
+                bot_settings_instance = bot_settings
+                print(f"{Fore.YELLOW}⚠️ Using direct import fallback for bot_settings{Style.RESET_ALL}")
+        
         initialize_api_dependencies(
             bot, 
             deps['config'], 
@@ -53,14 +70,14 @@ async def main():
             deps['moderation_manager'], 
             deps['deleted_message_logger'],
             deps['activity_tracker'], 
-            deps.get('bot_settings') or deps.get('settings'),  # ✅ FIXED: Get actual bot_settings
+            bot_settings_instance,
             deps['modstring_manager']
         )
         print(f"{Fore.GREEN}✅ API dependencies initialized{Style.RESET_ALL}")
     except Exception as e:
         print(f"{Fore.RED}❌ API initialization error: {e}{Style.RESET_ALL}")
         import traceback
-        traceback.print_exc()  # ✅ ADDED: Better error debugging
+        traceback.print_exc()
     
     # Start API server
     if start_api_server():

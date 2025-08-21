@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import uvicorn
 import httpx
 import asyncio
+from contextlib import asynccontextmanager
 
 ####################
 # IMPORTS
@@ -19,13 +20,30 @@ except ImportError as e:
 from utils.data_manager import DataManager
 
 ####################
+# LIFESPAN EVENTS
+####################
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    print("\n🔍 REGISTERED ROUTES:")
+    for route in app.routes:
+        if hasattr(route, 'path'):
+            methods = getattr(route, 'methods', ['GET'])
+            print(f"  {list(methods)[0] if methods else 'GET'} {route.path}")
+    print("\n")
+    yield
+    # Shutdown (if needed)
+
+####################
 # APP INITIALIZATION
 ####################
 
 app = FastAPI(
-    title="FlaggerBadger Dashboard API",
+    title="Watchtower Dashboard API",
     description="API for FlaggerBadger Discord moderation bot dashboard",
-    version="2.0.0"
+    version="2.0.0",
+    lifespan=lifespan
 )
 
 ####################
@@ -51,6 +69,27 @@ app.add_middleware(
 ####################
 
 BOT_API_URL = "http://127.0.0.1:8001"
+
+####################
+# ROOT ENDPOINT
+####################
+
+@app.get("/")
+async def root():
+    """Root endpoint"""
+    return {
+        "message": "Watch Tower Dashboard API",
+        "version": "2.0.0",
+        "status": "online",
+        "docs": "/docs",
+        "dashboard": "http://localhost:3000",
+        "bot_api": BOT_API_URL
+    }
+
+@app.get("/favicon.ico")
+async def favicon():
+    """Handle favicon requests to prevent 404s"""
+    return {"message": "No favicon available"}
 
 ####################
 # CORE PAGE DATA ENDPOINTS
@@ -366,19 +405,6 @@ app.include_router(moderators.router, prefix="/api")
 app.include_router(settings.router, prefix="/api")
 app.include_router(reports.router, prefix="/api")
 app.include_router(analytics.router, prefix="/api")
-
-####################
-# STARTUP EVENT
-####################
-
-@app.on_event("startup")
-async def startup_event():
-    print("\n🔍 REGISTERED ROUTES:")
-    for route in app.routes:
-        if hasattr(route, 'path'):
-            methods = getattr(route, 'methods', ['GET'])
-            print(f"  {list(methods)[0] if methods else 'GET'} {route.path}")
-    print("\n")
 
 ####################
 # UTILITY FUNCTIONS
