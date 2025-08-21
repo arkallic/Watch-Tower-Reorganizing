@@ -1,0 +1,89 @@
+/* dashboard/frontend/src/index.css */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==========================================
+   DYNAMIC AURORA BACKGROUND (No changes)
+   ========================================== */
+@keyframes aurora {
+  0% { transform: translateX(-50%) translateY(-50%) rotate(0deg) scale(1.5); opacity: 0.3; }
+  50% { transform: translateX(-50%) translateY(-50%) rotate(180deg) scale(1.6); opacity: 0.5; }
+  100% { transform: translateX(-50%) translateY(-50%) rotate(360deg) scale(1.5); opacity: 0.3; }
+}
+
+.dynamic-background::before,
+.dynamic-background::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 150vw;
+  height: 150vh;
+  background-image: radial-gradient(circle, rgba(245, 194, 68, 0.4) 0%, rgba(245, 194, 68, 0) 60%);
+  animation: aurora 25s linear infinite;
+}
+
+.dynamic-background::after {
+  background-image: radial-gradient(circle, rgba(239, 68, 68, 0.2) 0%, rgba(239, 68, 68, 0) 65%);
+  animation-delay: -12s;
+  animation-duration: 30s;
+}
+
+/* ==========================================
+   BASE AND SCROLLBAR (No changes)
+   ========================================== */
+@layer base {
+  body {
+    @apply bg-[#1A1E23] text-gray-300;
+  }
+  ::-webkit-scrollbar { @apply w-2 h-2; }
+  ::-webkit-scrollbar-track { @apply bg-gray-800/50; }
+  ::-webkit-scrollbar-thumb { @apply bg-gray-600/80 rounded-md; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-gray-500/80; }
+}
+
+/* ==========================================
+   COMPONENT STYLES (UPDATED)
+   ========================================== */
+@layer components {
+  /* Cards and Buttons (Your styles, unchanged) */
+  .card {
+    @apply bg-[#2D333B]/80 backdrop-blur-sm rounded-lg border border-gray-700/50;
+  }
+  .btn {
+    @apply px-3 py-1.5 rounded-md text-sm font-medium transition-colors duration-200 flex items-center space-x-2;
+  }
+  .btn-primary {
+    @apply btn bg-yellow-500 hover:bg-yellow-600 text-black font-semibold;
+  }
+  .btn-secondary {
+    @apply btn bg-black/30 hover:bg-black/50 text-gray-300 border border-gray-700;
+  }
+  .btn-icon {
+    @apply p-2 bg-black/30 hover:bg-black/50 rounded-md transition-colors border border-gray-700;
+  }
+
+  /* 
+    NEW & IMPROVED FORM STYLES 
+    This is the key to fixing the visibility and theme issues.
+  */
+  .input {
+    @apply w-full bg-[#1A1E23] text-gray-200 placeholder-gray-500 border-2 border-gray-700/80 rounded-lg px-4 py-2 transition-all duration-200;
+    @apply focus:outline-none focus:ring-2 focus:ring-yellow-500/50 focus:border-yellow-500;
+  }
+
+  .input-select {
+    @apply input appearance-none; /* Inherits .input style and removes default arrow */
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%239ca3af' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+    background-position: right 0.75rem center;
+    background-repeat: no-repeat;
+    background-size: 1.5em 1.5em;
+  }
+}
+
+/* Universal Transition (Your style, unchanged) */
+* {
+  transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out, border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
