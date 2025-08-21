@@ -5,10 +5,11 @@ from datetime import datetime
 from typing import Dict, List, Any
 
 class CaseManager:
-    def __init__(self, cases_dir: str, user_data: Dict[str, Any], logger):
+    def __init__(self, cases_dir: str, user_data: Dict[str, Any], logger, message_collector=None):
         self.cases_dir = cases_dir
         self.user_data = user_data
         self.logger = logger
+        self.message_collector = message_collector  # Add this
     
     def get_next_case_number(self, user_id: int) -> int:
         """Get the next case number for a user"""
@@ -22,8 +23,8 @@ class CaseManager:
         
         return max(case.get("case_number", 0) for case in existing_cases) + 1
     
-    def create_case(self, user_id: int, action_data: Dict[str, Any]) -> int:
-        """Create a new moderation case"""
+    async def create_case(self, user_id: int, action_data: Dict[str, Any], guild=None, bot=None) -> int:
+        """Create a new moderation case with comprehensive data"""
         user_key = str(user_id)
         
         # Ensure user entry exists
@@ -33,12 +34,93 @@ class CaseManager:
         # Get case number
         case_number = self.get_next_case_number(user_id)
         
-        # Create case data
+        # Get Discord user and moderator info
+        user_avatar_url = None
+        moderator_avatar_url = None
+        user_context = {}
+        guild_context = {}
+        
+        if guild and bot:
+            try:
+                # Get user info
+                user = guild.get_member(user_id)
+                if user:
+                    user_avatar_url = str(user.display_avatar.url)
+                    user_context = {
+                        "account_age_days": (datetime.now() - user.created_at.replace(tzinfo=None)).days,
+                        "server_join_days": (datetime.now() - user.joined_at.replace(tzinfo=None)).days if user.joined_at else 0,
+                        "total_roles": len(user.roles),
+                        "permissions": {
+                            "administrator": user.guild_permissions.administrator,
+                            "manage_messages": user.guild_permissions.manage_messages,
+                            "kick_members": user.guild_permissions.kick_members,
+                            "ban_members": user.guild_permissions.ban_members
+                        }
+                    }
+                
+                # Get moderator info
+                moderator_id = action_data.get('moderator_id')
+                if moderator_id:
+                    moderator = guild.get_member(moderator_id)
+                    if moderator:
+                        moderator_avatar_url = str(moderator.display_avatar.url)
+                
+                # Guild context
+                guild_context = {
+                    "guild_id": guild.id,
+                    "guild_name": guild.name
+                }
+                
+            except Exception as e:
+                self.logger.console_log_system(f"Error collecting user context: {e}", "WARNING")
+        
+        # Collect recent messages
+        recent_messages = []
+        if guild and self.message_collector:
+            try:
+                recent_messages = await self.message_collector.collect_user_messages(guild, user_id, 10)
+            except Exception as e:
+                self.logger.console_log_system(f"Error collecting recent messages: {e}", "WARNING")
+        
+        # Create comprehensive case data
         case_data = {
             "case_number": case_number,
+            "user_id": user_id,
+            "username": action_data.get('username', 'Unknown'),
+            "display_name": action_data.get('display_name', 'Unknown'),
+            "user_avatar_url": user_avatar_url,
+            "moderator_id": action_data.get('moderator_id'),
+            "moderator_name": action_data.get('moderator_name', 'Unknown'),
+            "moderator_avatar_url": moderator_avatar_url,
+            "action_type": action_data.get('action_type'),
             "timestamp": datetime.now().isoformat(),
+            "created_at": datetime.now().isoformat(),
+            "internal_comment": action_data.get('reason', ''),
+            "user_comment": action_data.get('reason', ''),
+            "reason": action_data.get('reason', ''),
+            "dm_sent": action_data.get('dm_sent', False),
+            "duration": action_data.get('duration'),
+            "recent_messages": recent_messages,
+            "flagged_message": action_data.get('flagged_message'),
+            "modstring_triggered": action_data.get('modstring_triggered', False),
+            "ai_confidence": action_data.get('ai_confidence'),
+            "severity": action_data.get('severity', 'Low'),
+            "resolvable": action_data.get('resolvable', 'Yes'),
             "status": "Open",
-            **action_data  # Merge in the action data
+            "resolved_at": None,
+            "resolved_by": None,
+            "resolved_by_id": None,
+            "resolution_method": None,
+            "resolution_comment": "",
+            "auto_resolve_at": None,
+            "channel_context": {
+                "total_channels_flagged": 0,  # You'll need to calculate this
+                "most_active_channel": "unknown"  # You'll need to determine this
+            },
+            "user_context": user_context,
+            "escalation_level": 0,
+            "tags": action_data.get('tags', []),
+            **guild_context
         }
         
         # Add to user data
@@ -47,10 +129,7 @@ class CaseManager:
         # Save individual case file
         self._save_case_file(user_id, case_number, case_data)
         
-        self.logger.console_log_system(
-            f"Created case #{case_number} for user {user_id}: {action_data.get('action_type', 'unknown')}",
-            "CASE"
-        )
+        self.logger.console_log_system(f"Created case #{case_number} for user {user_id}")
         
         return case_number
     

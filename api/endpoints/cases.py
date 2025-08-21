@@ -58,8 +58,9 @@ async def delete_case(user_id: int, case_number: int):
 
 @router.get("/enhanced")
 async def get_cases_enhanced():
-    """Get all cases with enhanced user information including avatars"""
+    """Get all cases with enhanced user information including avatars - MATCHES ORIGINAL API_calls.py"""
     try:
+        # Use the exact same path as original - this is critical!
         cases_path = Path("cases/user_moderation_data.json")
         if not cases_path.exists():
             return {"cases": []}
@@ -69,13 +70,13 @@ async def get_cases_enhanced():
         
         all_cases = []
         
-        # Get Discord bot instance for user lookups
+        # Get Discord bot instance for user lookups - exact same logic as original
         guild = None
         if bot and bot.is_ready() and bot.guilds:
             guild = bot.guilds[0]
         
         for user_id, user_data in user_cases.items():
-            # Try to get Discord user info
+            # Try to get Discord user info - exact same logic as original
             discord_user = None
             user_avatar_url = None
             
@@ -93,20 +94,21 @@ async def get_cases_enhanced():
                         pass
             
             for case in user_data.get('cases', []):
+                # CRITICAL: Use exact same field mapping as original API_calls.py
                 case_data = {
                     'case_number': case.get('case_number'),
                     'user_id': user_id,
                     'username': case.get('username') or (discord_user.name if discord_user else 'Unknown'),
                     'display_name': case.get('display_name') or (discord_user.display_name if discord_user else None),
                     'user_avatar_url': user_avatar_url,
-                    'action_type': case.get('action_taken', 'Unknown'),
+                    'action_type': case.get('action_taken', 'Unknown'),  # Note: 'action_taken' not 'action_type'
                     'moderator_id': case.get('moderator_id'),
                     'moderator_name': case.get('moderator_name', 'Unknown'),
                     'reason': case.get('reason', ''),
                     'internal_comment': case.get('internal_comment', ''),
                     'severity': case.get('severity', 'Low'),
                     'status': case.get('status', 'Open'),
-                    'created_at': case.get('timestamp'),
+                    'created_at': case.get('timestamp'),  # Note: 'timestamp' not 'created_at'
                     'resolved_at': case.get('resolved_at'),
                     'duration': case.get('duration'),
                     'dm_sent': case.get('dm_sent', False),
@@ -121,7 +123,7 @@ async def get_cases_enhanced():
                 }
                 all_cases.append(case_data)
         
-        # Sort by case number (newest first)
+        # Sort by case number (newest first) - exact same as original
         all_cases.sort(key=lambda x: x.get('case_number', 0), reverse=True)
         
         return {"cases": all_cases}

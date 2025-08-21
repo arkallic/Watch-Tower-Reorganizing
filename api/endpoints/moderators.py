@@ -2,6 +2,7 @@
 from fastapi import APIRouter, HTTPException
 from datetime import datetime, timedelta
 
+# CRITICAL: No prefix - original API has @api_app.get("/moderators") directly
 router = APIRouter(tags=["moderators"])
 
 # Global dependencies
@@ -17,15 +18,17 @@ def initialize_dependencies(bot_instance, moderation_manager_instance, bot_setti
 
 @router.get("/moderators")
 async def get_moderators():
-    """Get moderators with real Discord data, calculated rank, and team summary stats."""
+    """ENHANCED: Get moderators with real Discord data, calculated rank, and team summary stats - MATCHES ORIGINAL API_calls.py exactly"""
     if not bot.is_ready() or not bot.guilds:
         raise HTTPException(status_code=503, detail="Bot not ready")
     
     try:
         guild = bot.guilds[0]
+        # CRITICAL: Use exact same key names as original - 'moderator_roles' not 'mod_roles'
         mod_role_ids = bot_settings.get("moderator_roles", []) 
         admin_role_ids = bot_settings.get("admin_roles", [])
         
+        # Ensure all role IDs are integers for proper comparison - exact same logic as original
         all_mod_role_ids = {int(r_id) for r_id in mod_role_ids + admin_role_ids if r_id}
 
         if not all_mod_role_ids:
@@ -54,6 +57,7 @@ async def get_moderators():
 
             last_activity_ts = None
             if mod_cases:
+                # Handle potential string or datetime objects - exact same logic as original
                 case_timestamps = [c.get('created_at') for c in mod_cases if c.get('created_at')]
                 if case_timestamps:
                     last_activity_ts = max(case_timestamps)
@@ -74,6 +78,7 @@ async def get_moderators():
         for i, mod in enumerate(moderators):
             mod['rank'] = i + 1
 
+        # Calculate summary stats based on the found moderators - exact same logic as original
         total_cases_team = sum(mod['total_cases'] for mod in moderators)
         
         active_mods = 0
@@ -81,6 +86,7 @@ async def get_moderators():
             seven_days_ago = datetime.now() - timedelta(days=7)
             for mod in moderators:
                 if mod['last_activity']:
+                    # Ensure consistent timezone handling - exact same as original
                     last_activity_dt = datetime.fromisoformat(mod['last_activity'].replace('Z', '+00:00')).replace(tzinfo=None)
                     if last_activity_dt > seven_days_ago:
                         active_mods += 1
@@ -104,7 +110,7 @@ async def get_moderators():
 
 @router.get("/moderators/{moderator_id}")
 async def get_moderator_details(moderator_id: int):
-    """Provides comprehensive analytics suite for a single moderator."""
+    """FULLY ENHANCED: Provides a comprehensive analytics suite for a single moderator - MATCHES ORIGINAL API_calls.py exactly"""
     if not bot.is_ready() or not bot.guilds:
         raise HTTPException(status_code=503, detail="Bot not ready")
     
@@ -117,6 +123,7 @@ async def get_moderator_details(moderator_id: int):
         all_cases = moderation_manager.get_all_cases()
         mod_cases = [c for c in all_cases if c.get("moderator_id") == moderator_id]
         
+        # --- Start Advanced Calculations - exact same logic as original ---
         now = datetime.now()
         today = now.date()
         start_of_week = today - timedelta(days=today.weekday())
@@ -133,31 +140,37 @@ async def get_moderator_details(moderator_id: int):
         for case in mod_cases:
             created_at = datetime.fromisoformat(case['created_at'].replace('Z', ''))
             
+            # Timeline stats - exact same logic as original
             if created_at.date() == today: timeline_stats["today"] += 1
             if created_at.date() >= start_of_week: timeline_stats["this_week"] += 1
             if created_at.date() >= start_of_month: timeline_stats["this_month"] += 1
             if created_at.date() >= start_of_year: timeline_stats["this_year"] += 1
             
+            # Severity & Action - exact same logic as original
             severity = case.get("severity", "Low")
             if severity in severity_counts: severity_counts[severity] += 1
             action = case.get('action_type', 'mod_note')
             action_breakdown[action] = action_breakdown.get(action, 0) + 1
 
+            # Resolution time - exact same logic as original
             if case.get("resolved_at"):
                 resolved_at = datetime.fromisoformat(case['resolved_at'].replace('Z', ''))
                 time_diff_hours = (resolved_at - created_at).total_seconds() / 3600
                 resolution_times.append(time_diff_hours)
 
+            # Moderated users - exact same logic as original
             user_id = case.get("user_id")
             if user_id:
                 if user_id not in moderated_users:
                     moderated_users[user_id] = {"user_id": user_id, "display_name": case.get("display_name", "Unknown"), "case_count": 0}
                 moderated_users[user_id]["case_count"] += 1
             
+            # Activity heatmap data (for the last year) - exact same logic as original
             if created_at > now - timedelta(days=365):
                 date_str = created_at.strftime('%Y-%m-%d')
                 activity_heatmap[date_str] = activity_heatmap.get(date_str, 0) + 1
 
+        # --- Finalize Metrics - exact same logic as original ---
         total_mod_cases = len(mod_cases)
         total_server_cases = len(all_cases)
         
@@ -190,9 +203,9 @@ async def get_moderator_details(moderator_id: int):
             },
             "moderated_users": {
                 "most_common": sorted_mod_users[0] if sorted_mod_users else None,
-                "list": sorted_mod_users[:20]
+                "list": sorted_mod_users[:20] # Return top 20
             },
-            "recent_cases": mod_cases[:20],
+            "recent_cases": mod_cases[:20], # Return up to 20 recent cases
             "analytics": {
                  "activity_heatmap": [{"date": date, "count": count} for date, count in activity_heatmap.items()]
             }

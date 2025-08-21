@@ -13,7 +13,7 @@ def initialize_dependencies(bot_settings_instance):
 
 @router.get("/")
 async def get_settings():
-    """Get current bot settings"""
+    """Get current bot settings - MATCHES ORIGINAL API_calls.py exactly"""
     try:
         return bot_settings.get_all()
     except Exception as e:
@@ -21,7 +21,7 @@ async def get_settings():
 
 @router.post("/")
 async def update_settings(settings_data: dict):
-    """Update bot settings"""
+    """Update bot settings - MATCHES ORIGINAL API_calls.py exactly"""
     try:
         success = bot_settings.update_settings(settings_data, "dashboard")
         
@@ -40,12 +40,12 @@ async def update_settings(settings_data: dict):
 
 @router.get("/validate")
 async def validate_settings():
-    """Validate current settings configuration"""
+    """Validate current settings configuration - MATCHES ORIGINAL API_calls.py exactly"""
     try:
         settings = bot_settings.get_all()
         issues = []
         
-        # Check required settings
+        # Check required settings - exact same logic as original
         if not settings.get("enabled"):
             issues.append("Bot is disabled")
         
@@ -75,7 +75,7 @@ async def validate_settings():
 
 @router.get("/history")
 async def get_settings_history():
-    """Get settings change history"""
+    """Get settings change history - MATCHES ORIGINAL API_calls.py exactly"""
     try:
         history = bot_settings.get_change_history()
         return {"history": history}
@@ -84,7 +84,7 @@ async def get_settings_history():
 
 @router.post("/import")
 async def import_settings(data: dict):
-    """Import settings from exported data"""
+    """Import settings from exported data - MATCHES ORIGINAL API_calls.py exactly"""
     try:
         if "settings" not in data:
             return {"error": "Invalid import format"}
@@ -101,7 +101,7 @@ async def import_settings(data: dict):
 
 @router.post("/export")
 async def export_settings():
-    """Export current settings"""
+    """Export current settings - MATCHES ORIGINAL API_calls.py exactly"""
     try:
         current_settings = bot_settings.get_all()
         export_data = {

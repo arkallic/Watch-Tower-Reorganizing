@@ -51,8 +51,8 @@ def _initialize_endpoint_dependencies():
             bot, ollama, modstring_manager, activity_tracker, moderation_manager
         )
         
-        # Bot status endpoint
-        bot_status.initialize_dependencies(bot, logger)
+        # Bot status endpoint - UPDATED: Add missing dependencies
+        bot_status.initialize_dependencies(bot, logger, ollama, modstring_manager)
         
         # Setup endpoint
         setup.initialize_dependencies(bot_settings)
@@ -73,8 +73,8 @@ def _initialize_endpoint_dependencies():
         # Moderators endpoint
         moderators.initialize_dependencies(bot, moderation_manager, bot_settings)
         
-        # Analytics endpoint
-        analytics.initialize_dependencies(moderation_manager)
+        # Analytics endpoint - UPDATED: Add bot dependency for trends endpoint
+        analytics.initialize_dependencies(moderation_manager, bot)
         
         # Settings endpoint
         settings.initialize_dependencies(bot_settings)

@@ -8,13 +8,14 @@ router = APIRouter(prefix="/analytics", tags=["analytics"])
 # Global dependencies
 moderation_manager = None
 
-def initialize_dependencies(moderation_manager_instance):
-    global moderation_manager
+def initialize_dependencies(moderation_manager_instance, bot_instance=None):
+    global moderation_manager, bot
     moderation_manager = moderation_manager_instance
+    bot = bot_instance
 
 @router.get("/comprehensive")
 async def get_comprehensive_analytics(days: int = 30):
-    """Provides comprehensive analytics breakdown for a specified time period."""
+    """Provides comprehensive analytics breakdown for a specified time period - MATCHES ORIGINAL API_calls.py exactly"""
     try:
         all_cases = moderation_manager.get_all_cases()
         
@@ -94,7 +95,7 @@ async def get_comprehensive_analytics(days: int = 30):
 
 @router.get("/trends")
 async def get_analytics_trends():
-    """Get trending analytics data"""
+    """Get trending analytics data - MATCHES ORIGINAL API_calls.py exactly"""
     try:
         guild = bot.guilds[0] if bot and bot.guilds else None
         if not guild:

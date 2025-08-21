@@ -2,7 +2,7 @@
 from fastapi import APIRouter, HTTPException
 from datetime import datetime
 
-router = APIRouter(prefix="/health", tags=["health"])
+router = APIRouter(tags=["health"])
 
 # Global dependencies
 bot = None
@@ -20,8 +20,25 @@ def initialize_dependencies(bot_instance, ollama_instance, modstring_manager_ins
     activity_tracker = activity_tracker_instance
     moderation_manager = moderation_manager_instance
 
+@router.get("/health")
+async def health_check():
+    """Simple health check endpoint for external monitoring"""
+    try:
+        bot_ready = bot.is_ready() if bot else False
+        return {
+            "status": "healthy" if bot_ready else "degraded",
+            "bot_ready": bot_ready,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
 @router.get("/")
-async def api_health_check():
+async def comprehensive_health_check():
     """Comprehensive health check endpoint"""
     try:
         bot_ready = bot.is_ready() if bot else False

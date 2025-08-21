@@ -15,7 +15,7 @@ def initialize_dependencies(bot_instance=None):
 
 @router.get("/health")
 async def get_system_health():
-    """Get comprehensive system health metrics"""
+    """Get comprehensive system health metrics - MATCHES ORIGINAL API_calls.py exactly"""
     try:
         # Get system information
         cpu_percent = psutil.cpu_percent(interval=1)

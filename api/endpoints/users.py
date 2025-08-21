@@ -27,6 +27,7 @@ def calculate_user_risk(user_cases: List[Dict], user_flags: List[Dict], user_del
     """
     Calculates a comprehensive risk score and level for a user, ensuring consistency.
     This new logic incorporates cases, AI flags, and deletions with weighted values.
+    MATCHES ORIGINAL API_calls.py exactly
     """
     now = datetime.now()
     thirty_days_ago = now - timedelta(days=30)
@@ -85,7 +86,7 @@ def calculate_user_risk(user_cases: List[Dict], user_flags: List[Dict], user_del
 
 @router.get("/users")
 async def get_all_users():
-    """Get all server members with consistent moderation data."""
+    """Get all server members with consistent moderation data - MATCHES ORIGINAL API_calls.py exactly"""
     if not (bot and bot.guilds):
         raise HTTPException(status_code=503, detail="Bot is not connected to any servers")
     
@@ -138,7 +139,7 @@ async def get_all_users():
 
 @router.get("/users/{user_id}")
 async def get_user_details(user_id: int):
-    """Get detailed user information with consistent risk calculation."""
+    """Get detailed user information with consistent risk calculation - MATCHES ORIGINAL API_calls.py exactly"""
     if not bot or not bot.guilds: 
         raise HTTPException(status_code=503, detail="Bot is not connected")
     

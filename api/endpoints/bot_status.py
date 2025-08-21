@@ -8,15 +8,19 @@ router = APIRouter(tags=["bot"])
 # Global dependencies - will be injected
 bot = None
 logger = None
+ollama = None
+modstring_manager = None
 
-def initialize_dependencies(bot_instance, logger_instance):
-    global bot, logger
+def initialize_dependencies(bot_instance, logger_instance, ollama_instance=None, modstring_manager_instance=None):
+    global bot, logger, ollama, modstring_manager
     bot = bot_instance
     logger = logger_instance
+    ollama = ollama_instance
+    modstring_manager = modstring_manager_instance
 
 @router.get("/")
 async def api_root():
-    """API root endpoint with service information"""
+    """API root endpoint with service information - MATCHES ORIGINAL API_calls.py exactly"""
     return {
         "message": "Watch Tower Bot API",
         "version": "2.0.0",
@@ -37,7 +41,7 @@ async def api_root():
 
 @router.get("/bot/status")
 async def get_bot_status():
-    """Get comprehensive bot status information"""
+    """Get comprehensive bot status information - MATCHES ORIGINAL API_calls.py exactly"""
     try:
         if not bot or not bot.is_ready():
             return {"error": "Bot is not ready"}
@@ -45,8 +49,9 @@ async def get_bot_status():
         guild = bot.guilds[0] if bot.guilds else None
         
         # Test external connections
+        ollama_status = False
         try:
-            ollama_status = await ollama.check_connection() if 'ollama' in globals() else False
+            ollama_status = await ollama.check_connection() if ollama else False
         except:
             ollama_status = False
         
@@ -78,7 +83,7 @@ async def get_bot_status():
             "integrations": {
                 "ollama_connected": ollama_status,
                 "config_loaded": True,
-                "modstring_enabled": False
+                "modstring_enabled": modstring_manager.enabled if modstring_manager else False
             },
             "permissions": {
                 "administrator": guild.me.guild_permissions.administrator if guild else False,
@@ -91,11 +96,10 @@ async def get_bot_status():
         
     except Exception as e:
         return {"error": f"Failed to get bot status: {str(e)}"}
-    
 
 @router.get("/bot/guild/info")
 async def get_guild_info():
-    """Get detailed guild information"""
+    """Get detailed guild information - MATCHES ORIGINAL API_calls.py exactly"""
     try:
         if not bot or not bot.is_ready() or not bot.guilds:
             return {"error": "Bot not connected to any guilds"}

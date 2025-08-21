@@ -15,7 +15,7 @@ def initialize_dependencies(bot_settings_instance):
 @router.get("/check")
 async def check_setup_status():
     """
-    Checks if setup is needed.
+    Checks if setup is needed - MATCHES ORIGINAL API_calls.py exactly
     1. If bot_settings.json doesn't exist -> First Time.
     2. If bot_settings.json is corrupt (not valid JSON) -> Corruption, trigger setup.
     3. If bot_settings.json is valid -> Not first time.

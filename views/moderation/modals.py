@@ -41,7 +41,7 @@ class BaseModal(discord.ui.Modal):
         
         embed.set_thumbnail(url=self.target_user.display_avatar.url)
         
-        await interaction.response.send_message(embed=embed)
+        await interaction.followup.send(embed=embed)
 
 class WarnModal(BaseModal):
     def __init__(self, target_user: discord.Member, moderation_manager, 
@@ -59,11 +59,18 @@ class WarnModal(BaseModal):
         )
         
         self.user_comment = discord.ui.TextInput(
-            label="Message to User (Optional)",
+            label="Message to User (if sending DM)",
             style=discord.TextStyle.paragraph,
-            placeholder="Message that will be sent to the user...",
+            placeholder="Enter message to send to user...",
             required=False,
-            max_length=1000
+            max_length=800
+        )
+        
+        self.send_dm = discord.ui.TextInput(
+            label="Send DM to User? (Yes/No)",
+            placeholder="Yes",
+            required=False,
+            max_length=3
         )
         
         self.severity = discord.ui.TextInput(
@@ -75,6 +82,7 @@ class WarnModal(BaseModal):
         
         self.add_item(self.internal_comment)
         self.add_item(self.user_comment)
+        self.add_item(self.send_dm)
         self.add_item(self.severity)
     
     async def on_submit(self, interaction: discord.Interaction):
@@ -82,43 +90,33 @@ class WarnModal(BaseModal):
         
         try:
             severity = self.severity.value if self.severity.value else "Medium"
-            user_comment = self.user_comment.value
+            send_dm = self.send_dm.value.lower() == "yes" if self.send_dm.value else True
             internal_comment = self.internal_comment.value
+            user_comment = self.user_comment.value if self.user_comment.value else internal_comment
             
-            # Send DM to user if comment provided
-            dm_sent = False
-            if user_comment:
-                try:
-                    dm_embed = discord.Embed(
-                        title="⚠️ Warning",
-                        description=f"You have received a warning in **{interaction.guild.name}**.",
-                        color=discord.Color.yellow()
-                    )
-                    dm_embed.add_field(name="Message", value=user_comment, inline=False)
-                    dm_embed.add_field(name="Moderator", value=interaction.user.display_name, inline=True)
-                    
-                    await self.target_user.send(embed=dm_embed)
-                    dm_sent = True
-                except discord.Forbidden:
-                    pass
-            
-            # ✅ FIXED: Use new case creation method
+            # FIXED: Use new async case creation method with guild and bot
             action_data = {
                 "action_type": "warn",
                 "reason": internal_comment,
                 "severity": severity,
                 "duration": None,
-                "dm_sent": dm_sent,
+                "dm_sent": send_dm,
+                "moderator_id": interaction.user.id,
                 "moderator_name": interaction.user.display_name,
                 "display_name": self.target_user.display_name,
-                "username": self.target_user.name
+                "username": self.target_user.name,
+                "user_comment": user_comment,
+                "flagged_message": self.flagged_message if self.is_flagged_message else None,
+                "modstring_triggered": False
             }
             
-            case_number = await self.moderation_manager.create_moderation_case(self.target_user.id, action_data)
+            case_number = await self.moderation_manager.create_moderation_case(
+                self.target_user.id, action_data, interaction.guild, interaction.client
+            )
             
             await self.send_success_response(
                 interaction, "Warning", case_number, internal_comment,
-                f"DM Sent: {'✅' if dm_sent else '❌'}"
+                f"DM Sent: {'✅' if send_dm else '❌'}"
             )
             
         except Exception as e:
@@ -135,7 +133,7 @@ class TimeoutModal(BaseModal):
             label="Duration (minutes)",
             placeholder="60",
             required=True,
-            max_length=10
+            max_length=6
         )
         
         self.internal_comment = discord.ui.TextInput(
@@ -147,86 +145,63 @@ class TimeoutModal(BaseModal):
         )
         
         self.user_comment = discord.ui.TextInput(
-            label="Message to User (Optional)",
+            label="Message to User (if sending DM)",
             style=discord.TextStyle.paragraph,
-            placeholder="Message that will be sent to the user...",
+            placeholder="Enter message to send to user...",
             required=False,
-            max_length=1000
+            max_length=800
         )
         
-        self.severity = discord.ui.TextInput(
-            label="Severity (Low/Medium/High/Critical)",
-            placeholder="Medium",
+        self.send_dm = discord.ui.TextInput(
+            label="Send DM to User? (Yes/No)",
+            placeholder="Yes",
             required=False,
-            max_length=20
+            max_length=3
         )
         
         self.add_item(self.duration)
         self.add_item(self.internal_comment)
         self.add_item(self.user_comment)
-        self.add_item(self.severity)
+        self.add_item(self.send_dm)
     
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer()
         
         try:
-            # Validate duration
-            try:
-                duration_minutes = int(self.duration.value)
-                if duration_minutes <= 0 or duration_minutes > 40320:  # 28 days max
-                    await interaction.followup.send("❌ Duration must be between 1 and 40,320 minutes (28 days).", ephemeral=True)
-                    return
-            except ValueError:
-                await interaction.followup.send("❌ Invalid duration. Please enter a number.", ephemeral=True)
-                return
-            
-            severity = self.severity.value if self.severity.value else "Medium"
-            user_comment = self.user_comment.value
+            duration = int(self.duration.value)
+            send_dm = self.send_dm.value.lower() == "yes" if self.send_dm.value else True
             internal_comment = self.internal_comment.value
+            user_comment = self.user_comment.value if self.user_comment.value else internal_comment
             
-            # Apply timeout
-            timeout_duration = timedelta(minutes=duration_minutes)
-            await self.target_user.timeout(timeout_duration, reason=internal_comment)
+            # Apply the timeout
+            timeout_until = datetime.now() + timedelta(minutes=duration)
+            await self.target_user.timeout(timeout_until, reason=internal_comment)
             
-            # Send DM to user if comment provided
-            dm_sent = False
-            if user_comment:
-                try:
-                    dm_embed = discord.Embed(
-                        title="⏰ Timeout",
-                        description=f"You have been timed out in **{interaction.guild.name}** for {duration_minutes} minutes.",
-                        color=discord.Color.orange()
-                    )
-                    dm_embed.add_field(name="Message", value=user_comment, inline=False)
-                    dm_embed.add_field(name="Duration", value=f"{duration_minutes} minutes", inline=True)
-                    dm_embed.add_field(name="Moderator", value=interaction.user.display_name, inline=True)
-                    
-                    await self.target_user.send(embed=dm_embed)
-                    dm_sent = True
-                except discord.Forbidden:
-                    pass
-            
-            # ✅ FIXED: Use new case creation method
+            # FIXED: Use new async case creation method with guild and bot
             action_data = {
                 "action_type": "timeout",
                 "reason": internal_comment,
-                "severity": severity,
-                "duration": duration_minutes,
-                "dm_sent": dm_sent,
+                "severity": "Medium",
+                "duration": duration,
+                "dm_sent": send_dm,
+                "moderator_id": interaction.user.id,
                 "moderator_name": interaction.user.display_name,
                 "display_name": self.target_user.display_name,
-                "username": self.target_user.name
+                "username": self.target_user.name,
+                "user_comment": user_comment,
+                "flagged_message": self.flagged_message if self.is_flagged_message else None,
+                "modstring_triggered": False
             }
             
-            case_number = await self.moderation_manager.create_moderation_case(self.target_user.id, action_data)
+            case_number = await self.moderation_manager.create_moderation_case(
+                self.target_user.id, action_data, interaction.guild, interaction.client
+            )
             
             await self.send_success_response(
                 interaction, "Timeout", case_number, internal_comment,
-                f"Duration: {duration_minutes}m | DM Sent: {'✅' if dm_sent else '❌'}"
+                f"Duration: {duration} minutes"
             )
             
-        except discord.Forbidden:
-            await interaction.followup.send("❌ I don't have permission to timeout this user.", ephemeral=True)
         except Exception as e:
             await interaction.followup.send(f"❌ Error creating timeout: {str(e)}", ephemeral=True)
 
@@ -245,14 +220,6 @@ class KickModal(BaseModal):
             max_length=1000
         )
         
-        self.user_comment = discord.ui.TextInput(
-            label="Message to User (Optional)",
-            style=discord.TextStyle.paragraph,
-            placeholder="Message that will be sent to the user before kick...",
-            required=False,
-            max_length=1000
-        )
-        
         self.severity = discord.ui.TextInput(
             label="Severity (Low/Medium/High/Critical)",
             placeholder="High",
@@ -261,7 +228,6 @@ class KickModal(BaseModal):
         )
         
         self.add_item(self.internal_comment)
-        self.add_item(self.user_comment)
         self.add_item(self.severity)
     
     async def on_submit(self, interaction: discord.Interaction):
@@ -269,52 +235,36 @@ class KickModal(BaseModal):
         
         try:
             severity = self.severity.value if self.severity.value else "High"
-            user_comment = self.user_comment.value
             internal_comment = self.internal_comment.value
             
-            # Send DM to user if comment provided (before kick)
-            dm_sent = False
-            if user_comment:
-                try:
-                    dm_embed = discord.Embed(
-                        title="👢 Kicked",
-                        description=f"You have been kicked from **{interaction.guild.name}**.",
-                        color=discord.Color.red()
-                    )
-                    dm_embed.add_field(name="Reason", value=user_comment, inline=False)
-                    dm_embed.add_field(name="Moderator", value=interaction.user.display_name, inline=True)
-                    
-                    await self.target_user.send(embed=dm_embed)
-                    dm_sent = True
-                except discord.Forbidden:
-                    pass
-            
-            # Kick the user
-            await self.target_user.kick(reason=internal_comment)
-            
-            # ✅ FIXED: Use new case creation method
+            # FIXED: Use new async case creation method with guild and bot
             action_data = {
                 "action_type": "kick",
                 "reason": internal_comment,
                 "severity": severity,
                 "duration": None,
-                "dm_sent": dm_sent,
+                "dm_sent": False,
+                "moderator_id": interaction.user.id,
                 "moderator_name": interaction.user.display_name,
                 "display_name": self.target_user.display_name,
-                "username": self.target_user.name
+                "username": self.target_user.name,
+                "flagged_message": self.flagged_message if self.is_flagged_message else None,
+                "modstring_triggered": False
             }
             
-            case_number = await self.moderation_manager.create_moderation_case(self.target_user.id, action_data)
-            
-            await self.send_success_response(
-                interaction, "Kick", case_number, internal_comment,
-                f"DM Sent: {'✅' if dm_sent else '❌'}"
+            case_number = await self.moderation_manager.create_moderation_case(
+                self.target_user.id, action_data, interaction.guild, interaction.client
             )
             
-        except discord.Forbidden:
-            await interaction.followup.send("❌ I don't have permission to kick this user.", ephemeral=True)
+            # Kick the user after creating the case
+            await self.target_user.kick(reason=internal_comment)
+            
+            await self.send_success_response(
+                interaction, "Kick", case_number, internal_comment
+            )
+            
         except Exception as e:
-            await interaction.followup.send(f"❌ Error kicking user: {str(e)}", ephemeral=True)
+            await interaction.followup.send(f"❌ Error creating kick: {str(e)}", ephemeral=True)
 
 class BanModal(BaseModal):
     def __init__(self, target_user: discord.Member, moderation_manager, 
@@ -331,92 +281,53 @@ class BanModal(BaseModal):
             max_length=1000
         )
         
-        self.user_comment = discord.ui.TextInput(
-            label="Message to User (Optional)",
-            style=discord.TextStyle.paragraph,
-            placeholder="Message that will be sent to the user before ban...",
-            required=False,
-            max_length=1000
-        )
-        
         self.delete_days = discord.ui.TextInput(
-            label="Delete Messages (days, 0-7)",
+            label="Delete Messages (days 0-7)",
             placeholder="1",
             required=False,
             max_length=1
         )
         
-        self.severity = discord.ui.TextInput(
-            label="Severity (Low/Medium/High/Critical)",
-            placeholder="Critical",
-            required=False,
-            max_length=20
-        )
-        
         self.add_item(self.internal_comment)
-        self.add_item(self.user_comment)
         self.add_item(self.delete_days)
-        self.add_item(self.severity)
     
     async def on_submit(self, interaction: discord.Interaction):
         await interaction.response.defer()
         
         try:
-            # Validate delete days
-            try:
-                delete_days = int(self.delete_days.value) if self.delete_days.value else 1
-                if delete_days < 0 or delete_days > 7:
-                    delete_days = 1
-            except ValueError:
-                delete_days = 1
-            
-            severity = self.severity.value if self.severity.value else "Critical"
-            user_comment = self.user_comment.value
             internal_comment = self.internal_comment.value
+            delete_days = int(self.delete_days.value) if self.delete_days.value else 1
+            delete_days = max(0, min(delete_days, 7))  # Clamp between 0-7
             
-            # Send DM to user if comment provided (before ban)
-            dm_sent = False
-            if user_comment:
-                try:
-                    dm_embed = discord.Embed(
-                        title="🔨 Banned",
-                        description=f"You have been banned from **{interaction.guild.name}**.",
-                        color=discord.Color.dark_red()
-                    )
-                    dm_embed.add_field(name="Reason", value=user_comment, inline=False)
-                    dm_embed.add_field(name="Moderator", value=interaction.user.display_name, inline=True)
-                    
-                    await self.target_user.send(embed=dm_embed)
-                    dm_sent = True
-                except discord.Forbidden:
-                    pass
-            
-            # Ban the user
-            await self.target_user.ban(reason=internal_comment, delete_message_days=delete_days)
-            
-            # ✅ FIXED: Use new case creation method
+            # FIXED: Use new async case creation method with guild and bot
             action_data = {
                 "action_type": "ban",
                 "reason": internal_comment,
-                "severity": severity,
+                "severity": "Critical",
                 "duration": None,
-                "dm_sent": dm_sent,
+                "dm_sent": False,
+                "moderator_id": interaction.user.id,
                 "moderator_name": interaction.user.display_name,
                 "display_name": self.target_user.display_name,
-                "username": self.target_user.name
+                "username": self.target_user.name,
+                "flagged_message": self.flagged_message if self.is_flagged_message else None,
+                "modstring_triggered": False
             }
             
-            case_number = await self.moderation_manager.create_moderation_case(self.target_user.id, action_data)
+            case_number = await self.moderation_manager.create_moderation_case(
+                self.target_user.id, action_data, interaction.guild, interaction.client
+            )
+            
+            # Ban the user after creating the case
+            await self.target_user.ban(reason=internal_comment, delete_message_days=delete_days)
             
             await self.send_success_response(
                 interaction, "Ban", case_number, internal_comment,
-                f"Messages Deleted: {delete_days} days | DM Sent: {'✅' if dm_sent else '❌'}"
+                f"Messages deleted: {delete_days} days"
             )
             
-        except discord.Forbidden:
-            await interaction.followup.send("❌ I don't have permission to ban this user.", ephemeral=True)
         except Exception as e:
-            await interaction.followup.send(f"❌ Error banning user: {str(e)}", ephemeral=True)
+            await interaction.followup.send(f"❌ Error creating ban: {str(e)}", ephemeral=True)
 
 class ModNoteModal(BaseModal):
     def __init__(self, target_user: discord.Member, moderation_manager, 
@@ -426,9 +337,9 @@ class ModNoteModal(BaseModal):
                         flagged_message, message_url, "Add Mod Note")
         
         self.internal_comment = discord.ui.TextInput(
-            label="Internal Mod Note",
+            label="Internal Mod Comment",
             style=discord.TextStyle.paragraph,
-            placeholder="Enter internal note about this user...",
+            placeholder="Enter internal notes...",
             required=True,
             max_length=1000
         )
@@ -459,19 +370,25 @@ class ModNoteModal(BaseModal):
             resolvable = "Yes" if self.resolvable.value.lower() == "yes" else "No"
             internal_comment = self.internal_comment.value
             
-            # ✅ FIXED: Use new case creation method
+            # FIXED: Use new async case creation method with guild and bot
             action_data = {
                 "action_type": "mod_note",
                 "reason": internal_comment,
                 "severity": severity,
                 "duration": None,
                 "dm_sent": False,
+                "moderator_id": interaction.user.id,
                 "moderator_name": interaction.user.display_name,
                 "display_name": self.target_user.display_name,
-                "username": self.target_user.name
+                "username": self.target_user.name,
+                "resolvable": resolvable,
+                "flagged_message": self.flagged_message if self.is_flagged_message else None,
+                "modstring_triggered": False
             }
             
-            case_number = await self.moderation_manager.create_moderation_case(self.target_user.id, action_data)
+            case_number = await self.moderation_manager.create_moderation_case(
+                self.target_user.id, action_data, interaction.guild, interaction.client
+            )
             
             await self.send_success_response(
                 interaction, "Mod Note", case_number, internal_comment,
@@ -480,125 +397,3 @@ class ModNoteModal(BaseModal):
             
         except Exception as e:
             await interaction.followup.send(f"❌ Error creating mod note: {str(e)}", ephemeral=True)
-
-class SilenceModal(BaseModal):
-    def __init__(self, target_user: discord.Member, moderation_manager, 
-                 is_flagged_message: bool = False, flagged_message: str = "", 
-                 message_url: str = ""):
-        super().__init__(target_user, moderation_manager, is_flagged_message, 
-                        flagged_message, message_url, "Silence User")
-        
-        self.duration = discord.ui.TextInput(
-            label="Duration (minutes)",
-            placeholder="60",
-            required=True,
-            max_length=10
-        )
-        
-        self.internal_comment = discord.ui.TextInput(
-            label="Internal Mod Comment",
-            style=discord.TextStyle.paragraph,
-            placeholder="Enter internal notes about this silence...",
-            required=True,
-            max_length=1000
-        )
-        
-        self.user_comment = discord.ui.TextInput(
-            label="Message to User (Optional)",
-            style=discord.TextStyle.paragraph,
-            placeholder="Message that will be sent to the user...",
-            required=False,
-            max_length=1000
-        )
-        
-        self.severity = discord.ui.TextInput(
-            label="Severity (Low/Medium/High/Critical)",
-            placeholder="Medium",
-            required=False,
-            max_length=20
-        )
-        
-        self.add_item(self.duration)
-        self.add_item(self.internal_comment)
-        self.add_item(self.user_comment)
-        self.add_item(self.severity)
-    
-    async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.defer()
-        
-        try:
-            # Validate duration
-            try:
-                duration_minutes = int(self.duration.value)
-                if duration_minutes <= 0:
-                    await interaction.followup.send("❌ Duration must be greater than 0.", ephemeral=True)
-                    return
-            except ValueError:
-                await interaction.followup.send("❌ Invalid duration. Please enter a number.", ephemeral=True)
-                return
-            
-            severity = self.severity.value if self.severity.value else "Medium"
-            user_comment = self.user_comment.value
-            internal_comment = self.internal_comment.value
-            
-            # Apply silence (remove send_messages permission)
-            success_count = 0
-            total_channels = 0
-            
-            for channel in interaction.guild.text_channels:
-                try:
-                    total_channels += 1
-                    overwrite = discord.PermissionOverwrite()
-                    overwrite.send_messages = False
-                    overwrite.add_reactions = False
-                    
-                    await channel.set_permissions(self.target_user, overwrite=overwrite)
-                    success_count += 1
-                except discord.Forbidden:
-                    continue
-                except Exception:
-                    continue
-            
-            if success_count == 0:
-                await interaction.followup.send("❌ Failed to apply silence restrictions. Check bot permissions.", ephemeral=True)
-                return
-            
-            # Send DM to user if comment provided
-            dm_sent = False
-            if user_comment:
-                try:
-                    dm_embed = discord.Embed(
-                        title="🔇 Silenced",
-                        description=f"You have been silenced in **{interaction.guild.name}** for {duration_minutes} minutes.",
-                        color=discord.Color.orange()
-                    )
-                    dm_embed.add_field(name="Message", value=user_comment, inline=False)
-                    dm_embed.add_field(name="Duration", value=f"{duration_minutes} minutes", inline=True)
-                    dm_embed.add_field(name="Moderator", value=interaction.user.display_name, inline=True)
-                    
-                    await self.target_user.send(embed=dm_embed)
-                    dm_sent = True
-                except discord.Forbidden:
-                    pass
-            
-            # ✅ FIXED: Use new case creation method
-            action_data = {
-                "action_type": "silence",
-                "reason": internal_comment,
-                "severity": severity,
-                "duration": duration_minutes,
-                "dm_sent": dm_sent,
-                "moderator_name": interaction.user.display_name,
-                "display_name": self.target_user.display_name,
-                "username": self.target_user.name
-            }
-            
-            case_number = await self.moderation_manager.create_moderation_case(self.target_user.id, action_data)
-            
-            await self.send_success_response(
-                interaction, "Silence", case_number, internal_comment,
-                f"Duration: {duration_minutes}m | Channels: {success_count}/{total_channels} | DM Sent: {'✅' if dm_sent else '❌'}"
-            )
-            
-        except Exception as e:
-            await interaction.followup.send(f"❌ Error creating silence: {str(e)}", ephemeral=True)

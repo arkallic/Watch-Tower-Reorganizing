@@ -154,7 +154,9 @@ class CaseHandler(BaseHandler):
         }
         
         # Use new case creation method
-        case_number = await self.moderation_manager.create_moderation_case(user.id, action_data)
+        case_number = await self.moderation_manager.create_moderation_case(
+    user.id, action_data, interaction.guild, self.moderation_manager.bot
+)
         
         return case_number
     
