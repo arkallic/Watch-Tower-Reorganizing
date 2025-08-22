@@ -1,34 +1,35 @@
 # api/endpoints/moderators.py
 from fastapi import APIRouter, HTTPException
 from datetime import datetime, timedelta
+import asyncio
+from collections import Counter
 
-# CRITICAL: No prefix - original API has @api_app.get("/moderators") directly
 router = APIRouter(tags=["moderators"])
 
 # Global dependencies
 bot = None
 moderation_manager = None
 bot_settings = None
+activity_tracker = None
 
-def initialize_dependencies(bot_instance, moderation_manager_instance, bot_settings_instance):
-    global bot, moderation_manager, bot_settings
+def initialize_dependencies(bot_instance, moderation_manager_instance, bot_settings_instance, activity_tracker_instance):
+    """Initializes dependencies for the moderators endpoint."""
+    global bot, moderation_manager, bot_settings, activity_tracker
     bot = bot_instance
     moderation_manager = moderation_manager_instance
     bot_settings = bot_settings_instance
+    activity_tracker = activity_tracker_instance
 
 @router.get("/moderators")
 async def get_moderators():
-    """ENHANCED: Get moderators with real Discord data, calculated rank, and team summary stats - MATCHES ORIGINAL API_calls.py exactly"""
+    """ENHANCED: Get moderators with real Discord data, calculated rank, and team summary stats."""
     if not bot.is_ready() or not bot.guilds:
         raise HTTPException(status_code=503, detail="Bot not ready")
     
     try:
         guild = bot.guilds[0]
-        # CRITICAL: Use exact same key names as original - 'moderator_roles' not 'mod_roles'
         mod_role_ids = bot_settings.get("moderator_roles", []) 
         admin_role_ids = bot_settings.get("admin_roles", [])
-        
-        # Ensure all role IDs are integers for proper comparison - exact same logic as original
         all_mod_role_ids = {int(r_id) for r_id in mod_role_ids + admin_role_ids if r_id}
 
         if not all_mod_role_ids:
@@ -45,19 +46,14 @@ async def get_moderators():
             if not all_mod_role_ids.intersection(member_role_ids): 
                 continue
                 
-            mod_cases = [c for c in all_cases if c.get("moderator_id") == member.id]
+            mod_cases = [c for c in all_cases if str(c.get("moderator_id")) == str(member.id)]
             total_cases = len(mod_cases)
             
-            action_breakdown = {}
-            for case in mod_cases:
-                action = case.get('action_type', 'mod_note')
-                action_breakdown[action] = action_breakdown.get(action, 0) + 1
-            
+            action_breakdown = Counter(c.get('action_type', 'mod_note') for c in mod_cases)
             efficiency_score = min(100, (total_cases * 2) + (len(action_breakdown) * 5))
 
             last_activity_ts = None
             if mod_cases:
-                # Handle potential string or datetime objects - exact same logic as original
                 case_timestamps = [c.get('created_at') for c in mod_cases if c.get('created_at')]
                 if case_timestamps:
                     last_activity_ts = max(case_timestamps)
@@ -78,7 +74,6 @@ async def get_moderators():
         for i, mod in enumerate(moderators):
             mod['rank'] = i + 1
 
-        # Calculate summary stats based on the found moderators - exact same logic as original
         total_cases_team = sum(mod['total_cases'] for mod in moderators)
         
         active_mods = 0
@@ -86,7 +81,6 @@ async def get_moderators():
             seven_days_ago = datetime.now() - timedelta(days=7)
             for mod in moderators:
                 if mod['last_activity']:
-                    # Ensure consistent timezone handling - exact same as original
                     last_activity_dt = datetime.fromisoformat(mod['last_activity'].replace('Z', '+00:00')).replace(tzinfo=None)
                     if last_activity_dt > seven_days_ago:
                         active_mods += 1
@@ -110,7 +104,7 @@ async def get_moderators():
 
 @router.get("/moderators/{moderator_id}")
 async def get_moderator_details(moderator_id: int):
-    """FULLY ENHANCED: Provides a comprehensive analytics suite for a single moderator - MATCHES ORIGINAL API_calls.py exactly"""
+    """Provides a comprehensive analytics suite for a single moderator."""
     if not bot.is_ready() or not bot.guilds:
         raise HTTPException(status_code=503, detail="Bot not ready")
     
@@ -121,61 +115,41 @@ async def get_moderator_details(moderator_id: int):
             raise HTTPException(status_code=404, detail="Moderator not found in server")
 
         all_cases = moderation_manager.get_all_cases()
-        mod_cases = [c for c in all_cases if c.get("moderator_id") == moderator_id]
+        mod_cases = [c for c in all_cases if str(c.get("moderator_id")) == str(moderator_id)]
         
-        # --- Start Advanced Calculations - exact same logic as original ---
         now = datetime.now()
         today = now.date()
         start_of_week = today - timedelta(days=today.weekday())
         start_of_month = today.replace(day=1)
-        start_of_year = today.replace(month=1, day=1)
 
-        timeline_stats = {"today": 0, "this_week": 0, "this_month": 0, "this_year": 0}
-        severity_counts = {"Low": 0, "Medium": 0, "High": 0, "Critical": 0}
-        action_breakdown = {}
+        timeline_stats = {"today": 0, "this_week": 0, "this_month": 0}
         resolution_times = []
-        moderated_users = {}
         activity_heatmap = {}
 
         for case in mod_cases:
-            created_at = datetime.fromisoformat(case['created_at'].replace('Z', ''))
-            
-            # Timeline stats - exact same logic as original
-            if created_at.date() == today: timeline_stats["today"] += 1
-            if created_at.date() >= start_of_week: timeline_stats["this_week"] += 1
-            if created_at.date() >= start_of_month: timeline_stats["this_month"] += 1
-            if created_at.date() >= start_of_year: timeline_stats["this_year"] += 1
-            
-            # Severity & Action - exact same logic as original
-            severity = case.get("severity", "Low")
-            if severity in severity_counts: severity_counts[severity] += 1
-            action = case.get('action_type', 'mod_note')
-            action_breakdown[action] = action_breakdown.get(action, 0) + 1
+            if case.get('created_at'):
+                created_at = datetime.fromisoformat(case['created_at'].replace('Z', ''))
+                
+                if created_at.date() == today: timeline_stats["today"] += 1
+                if created_at.date() >= start_of_week: timeline_stats["this_week"] += 1
+                if created_at.date() >= start_of_month: timeline_stats["this_month"] += 1
+                
+                if case.get("resolved_at"):
+                    resolved_at = datetime.fromisoformat(case['resolved_at'].replace('Z', ''))
+                    time_diff_hours = (resolved_at - created_at).total_seconds() / 3600
+                    resolution_times.append(time_diff_hours)
+                
+                if created_at > now - timedelta(days=365):
+                    date_str = created_at.strftime('%Y-%m-%d')
+                    activity_heatmap[date_str] = activity_heatmap.get(date_str, 0) + 1
 
-            # Resolution time - exact same logic as original
-            if case.get("resolved_at"):
-                resolved_at = datetime.fromisoformat(case['resolved_at'].replace('Z', ''))
-                time_diff_hours = (resolved_at - created_at).total_seconds() / 3600
-                resolution_times.append(time_diff_hours)
-
-            # Moderated users - exact same logic as original
-            user_id = case.get("user_id")
-            if user_id:
-                if user_id not in moderated_users:
-                    moderated_users[user_id] = {"user_id": user_id, "display_name": case.get("display_name", "Unknown"), "case_count": 0}
-                moderated_users[user_id]["case_count"] += 1
-            
-            # Activity heatmap data (for the last year) - exact same logic as original
-            if created_at > now - timedelta(days=365):
-                date_str = created_at.strftime('%Y-%m-%d')
-                activity_heatmap[date_str] = activity_heatmap.get(date_str, 0) + 1
-
-        # --- Finalize Metrics - exact same logic as original ---
         total_mod_cases = len(mod_cases)
         total_server_cases = len(all_cases)
         
-        sorted_mod_users = sorted(moderated_users.values(), key=lambda x: x['case_count'], reverse=True)
-        
+        action_breakdown = Counter(c.get('action_type', 'mod_note') for c in mod_cases)
+        severity_counts = Counter(c.get('severity', 'Low') for c in mod_cases)
+        moderated_users = Counter(c.get('display_name', 'Unknown') for c in mod_cases if c.get('display_name'))
+
         return {
             "profile": {
                 "moderator_id": str(member.id),
@@ -197,19 +171,74 @@ async def get_moderator_details(moderator_id: int):
                     "avg_resolution_hours": round(sum(resolution_times) / len(resolution_times), 1) if resolution_times else None,
                 },
                 "breakdowns": {
-                    "by_severity": severity_counts,
-                    "by_action": action_breakdown,
+                    "by_severity": dict(severity_counts),
+                    "by_action": dict(action_breakdown),
                 }
             },
             "moderated_users": {
-                "most_common": sorted_mod_users[0] if sorted_mod_users else None,
-                "list": sorted_mod_users[:20] # Return top 20
+                "list": [{"name": name, "cases": count} for name, count in moderated_users.most_common(20)]
             },
-            "recent_cases": mod_cases[:20], # Return up to 20 recent cases
+            "all_cases_by_mod": mod_cases,
             "analytics": {
                  "activity_heatmap": [{"date": date, "count": count} for date, count in activity_heatmap.items()]
             }
         }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/moderators/profile/{moderator_id}")
+async def get_moderator_profile_data(moderator_id: int):
+    """
+    Provides a comprehensive, all-in-one data payload for a single
+    moderator's profile page, including performance, activity, and comparisons.
+    """
+    if not bot or not bot.guilds:
+        raise HTTPException(status_code=503, detail="Bot not connected")
+
+    try:
+        details_task = get_moderator_details(moderator_id)
+        team_summary_task = get_moderators()
+        
+        mod_data, team_data = await asyncio.gather(details_task, team_summary_task)
+        
+        if isinstance(mod_data, HTTPException): raise mod_data
+        if isinstance(team_data, HTTPException): raise team_data
+
+        user_activity = activity_tracker.get_user_activity_summary(moderator_id, hours_back=720) # 30 days
+        
+        # Use the complete case history from the details function
+        mod_cases = mod_data.get("all_cases_by_mod", [])
+        
+        # Calculate Top Modded Channels
+        channel_counts = Counter(c.get("channel_name") for c in mod_cases if c.get("channel_name") and c.get("channel_name") != "Unknown")
+        top_modded_channels = [{"name": name, "count": count} for name, count in channel_counts.most_common(5)]
+
+        hour_counts = Counter(datetime.fromisoformat(c['created_at'].replace('Z','')).hour for c in mod_cases if c.get('created_at'))
+        peak_hour = hour_counts.most_common(1)[0][0] if hour_counts else None
+        
+        payload = {
+            "profile": mod_data.get("profile"),
+            "stats": mod_data.get("stats"),
+            "analytics": {
+                **mod_data.get("analytics", {}),
+                "moderator_as_user": {
+                    "messages_30d": user_activity.get("messages", 0),
+                    "voice_sessions_30d": user_activity.get("voice_sessions", 0),
+                    "reactions_30d": user_activity.get("reactions", 0)
+                },
+                "performance_vs_team": {
+                    "team_avg_cases": team_data.get("summary", {}).get("avg_cases_team", 0)
+                },
+                "top_modded_channels": top_modded_channels,
+                "peak_activity_hour_utc": f"{peak_hour}:00 UTC" if peak_hour is not None else "N/A"
+            },
+            "moderated_users_list": mod_data.get("moderated_users", {}).get("list", []),
+            "full_case_history": mod_cases,
+        }
+        return payload
+
     except Exception as e:
         import traceback
         traceback.print_exc()

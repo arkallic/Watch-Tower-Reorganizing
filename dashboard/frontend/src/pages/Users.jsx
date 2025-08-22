@@ -1,12 +1,19 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   MagnifyingGlassIcon, ArrowPathIcon, EyeIcon, AdjustmentsHorizontalIcon, FlagIcon
 } from '@heroicons/react/24/outline';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, AreaChart, Area, XAxis, YAxis } from 'recharts';
-import UserDetailsModal from '../components/UserDetailsModal';
+import { useNavigate } from 'react-router-dom';
 
 const Users = () => {
+  const navigate = useNavigate();
+
+  // --- STATE MANAGEMENT ---
   const [users, setUsers] = useState([]);
+  const [userStats, setUserStats] = useState({});
+  const [riskDistribution, setRiskDistribution] = useState([]);
+  const [serverGrowth, setServerGrowth] = useState([]);
+  
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -14,7 +21,6 @@ const Users = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('risk_score');
   const [sortOrder, setSortOrder] = useState('desc');
-  const [selectedUserId, setSelectedUserId] = useState(null);
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [pageSize] = useState(50);
   const [currentPage, setCurrentPage] = useState(1);
@@ -24,29 +30,25 @@ const Users = () => {
     botFilter: 'humans',
     hasOpenCases: 'all'
   });
-  
-  const [userStats, setUserStats] = useState({});
-  const [riskDistribution, setRiskDistribution] = useState([]);
-  const [serverGrowth, setServerGrowth] = useState([]);
-  const [growthTimeRange, setGrowthTimeRange] = useState('30d');
 
+  // --- DATA FETCHING (STREAMLINED) ---
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
       
       const isDevelopment = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-      const usersResponse = await fetch(isDevelopment ? 'http://localhost:8000/api/pagedata/users' : '/api/pagedata/users');
-      if (!usersResponse.ok) throw new Error(`Users API failed: ${usersResponse.statusText}`);
+      const response = await fetch(isDevelopment ? 'http://localhost:8000/api/pagedata/users-enhanced' : '/api/pagedata/users-enhanced');
+      if (!response.ok) throw new Error(`API failed: ${response.statusText}`);
       
-      const usersData = await usersResponse.json();
-      if (usersData.error) throw new Error(usersData.error);
+      const data = await response.json();
+      if (data.error) throw new Error(data.error);
 
-      const processedUsers = usersData.users || [];
-      setUsers(processedUsers);
+      setUsers(data.users || []);
+      setUserStats(data.userStats || {});
+      setRiskDistribution(data.riskDistribution || []);
+      setServerGrowth(data.serverGrowth || []);
       setLastUpdated(new Date());
-      calculateUserStats(processedUsers);
-      generateAnalytics(processedUsers);
       
     } catch (err) {
       console.error('Error fetching user page data:', err);
@@ -55,85 +57,18 @@ const Users = () => {
       setLoading(false);
     }
   }, []);
-  
-  const fetchGrowthData = useCallback(async () => {
-    try {
-        const isDevelopment = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-        const response = await fetch(isDevelopment ? 'http://localhost:8000/api/pagedata/users-growth' : '/api/pagedata/users-growth');
-        if (!response.ok) return;
-
-        const { activityData, trendsData } = await response.json();
-        const humansInServer = users.filter(u => !u.bot).length;
-
-        if (growthTimeRange === '24h' && activityData?.hourly_data) {
-            const hourlyData = activityData.hourly_data.map(d => ({ date: `${d.hour}:00`, members: d.joins - d.leaves }));
-            let runningTotal = humansInServer;
-            const growth = hourlyData.reverse().map(h => {
-                const current = runningTotal;
-                runningTotal -= h.members;
-                return { date: h.date, members: current };
-            }).reverse();
-            setServerGrowth(growth);
-        } else if (trendsData?.daily_stats) {
-            let memberCount = humansInServer;
-            const dailyData = trendsData.daily_stats.filter(d => {
-                const date = new Date(d.date);
-                const daysAgo = (new Date() - date) / (1000 * 3600 * 24);
-                return growthTimeRange === '7d' ? daysAgo <= 7 : daysAgo <= 30;
-            });
-
-            const simulatedGrowth = dailyData.slice().reverse().map(day => {
-                const currentCount = memberCount;
-                memberCount -= (day.new_members - day.left_members);
-                return { date: day.date, members: currentCount };
-            }).reverse();
-            setServerGrowth(simulatedGrowth);
-        }
-    } catch (err) {
-        console.error("Failed to fetch growth data", err);
-    }
-  }, [growthTimeRange, users]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
-  useEffect(() => {
-    if (users.length > 0) {
-        fetchGrowthData();
-    }
-  }, [users, growthTimeRange, fetchGrowthData]);
-
-  const calculateUserStats = (userList) => {
-    const humans = userList.filter(u => !u.bot);
-    const stats = {
-      total: userList.length,
-      humans: humans.length,
-      bots: userList.filter(u => u.bot).length,
-      clean: humans.filter(u => (u.total_cases || 0) === 0 && (u.total_flags || 0) === 0).length,
-      highRisk: humans.filter(u => u.risk_level === 'High' || u.risk_level === 'Critical').length,
-      newMembers: humans.filter(u => u.server_tenure_days <= 7).length,
-    };
-    setUserStats(stats);
-  };
-
-  const generateAnalytics = (userList) => {
-    const humans = userList.filter(u => !u.bot);
-    const riskDist = [
-      { name: 'Low', value: humans.filter(u => u.risk_level === 'Low').length, color: '#22c55e' },
-      { name: 'Medium', value: humans.filter(u => u.risk_level === 'Medium').length, color: '#f59e0b' },
-      { name: 'High', value: humans.filter(u => u.risk_level === 'High').length, color: '#ef4444' },
-      { name: 'Critical', value: humans.filter(u => u.risk_level === 'Critical').length, color: '#a855f7' }
-    ].filter(item => item.value > 0);
-    setRiskDistribution(riskDist);
-  };
-
-  const mostModeratedUsers = users
+  // --- MEMOIZED LISTS FOR UI ---
+  const mostModeratedUsers = useMemo(() => users
     .filter(u => !u.bot && (u.total_cases || 0) > 0)
     .sort((a,b) => (b.total_cases || 0) - (a.total_cases || 0))
-    .slice(0, 5);
+    .slice(0, 5), [users]);
 
-  const filteredUsers = users.filter(user => {
+  const filteredUsers = useMemo(() => users.filter(user => {
     const search = searchTerm.toLowerCase();
     const matchesSearch = !searchTerm || user.display_name.toLowerCase().includes(search) || user.username.toLowerCase().includes(search) || user.user_id.includes(search);
     
@@ -144,18 +79,23 @@ const Users = () => {
         if (filters.hasOpenCases !== 'all') matchesAdvanced = matchesAdvanced && (filters.hasOpenCases === 'yes' ? (user.open_cases || 0) > 0 : (user.open_cases || 0) === 0);
     }
     return matchesSearch && matchesAdvanced;
-  });
+  }), [users, searchTerm, showAdvancedFilters, filters]);
 
-  const sortedUsers = [...filteredUsers].sort((a, b) => {
+  const sortedUsers = useMemo(() => [...filteredUsers].sort((a, b) => {
     const aVal = a[sortBy] || 0;
     const bVal = b[sortBy] || 0;
+    if (sortBy === 'joined_at') {
+        if (!aVal) return 1; if (!bVal) return -1;
+        return sortOrder === 'asc' ? new Date(aVal) - new Date(bVal) : new Date(bVal) - new Date(aVal);
+    }
     if (typeof aVal === 'string') return sortOrder === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
     return sortOrder === 'asc' ? aVal - bVal : bVal - aVal;
-  });
+  }), [filteredUsers, sortBy, sortOrder]);
 
-  const paginatedUsers = sortedUsers.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-  const totalPages = Math.ceil(sortedUsers.length / pageSize);
+  const paginatedUsers = useMemo(() => sortedUsers.slice((currentPage - 1) * pageSize, currentPage * pageSize), [sortedUsers, currentPage, pageSize]);
+  const totalPages = useMemo(() => Math.ceil(sortedUsers.length / pageSize), [sortedUsers]);
 
+  // --- HANDLERS AND HELPERS ---
   const handleSort = (field) => {
     setSortOrder(sortBy === field && sortOrder === 'desc' ? 'asc' : 'desc');
     setSortBy(field);
@@ -181,7 +121,7 @@ const Users = () => {
     return 'bg-gray-500';
   };
 
-  if (loading) return <div className="p-6 text-center text-gray-400">Loading Server Members...</div>;
+  if (loading) return <div className="p-6 h-full flex items-center justify-center"><div className="animate-spin rounded-full h-16 w-16 border-b-4 border-yellow-400"></div></div>;
   if (error) return <div className="p-6 text-center text-red-400">Error: {error}</div>;
 
   return (
@@ -227,19 +167,11 @@ const Users = () => {
             <div className="card p-4">
                 <div className="flex justify-between items-center mb-2">
                     <h3 className="text-md font-semibold text-gray-100">Server Growth</h3>
-                    <div className="flex items-center space-x-1 bg-gray-800 rounded-lg p-1">
-                        {['24h', '7d', '30d'].map(range => (
-                            <button key={range} onClick={() => setGrowthTimeRange(range)}
-                                className={`px-2 py-1 text-xs rounded-md transition-colors ${growthTimeRange === range ? 'bg-yellow-500/30 text-yellow-300' : 'text-gray-400 hover:bg-gray-700'}`}>
-                                {range === '24h' ? '24H' : range.toUpperCase()}
-                            </button>
-                        ))}
-                    </div>
                 </div>
                 <ResponsiveContainer width="100%" height={250}>
                     <AreaChart data={serverGrowth}>
                         <defs><linearGradient id="colorMembers" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient></defs>
-                        <XAxis dataKey="date" stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} />
+                        <XAxis dataKey="date" stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(str) => new Date(str).toLocaleDateString('en-US', {month: 'short', day: 'numeric'})} />
                         <YAxis stroke="#9ca3af" fontSize={12} tickLine={false} axisLine={false} allowDecimals={false} domain={['dataMin - 5', 'dataMax + 5']} />
                         <Tooltip contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #4b5563' }} />
                         <Area type="monotone" dataKey="members" stroke="#3b82f6" fillOpacity={1} fill="url(#colorMembers)" />
@@ -249,7 +181,7 @@ const Users = () => {
             <div className="card p-4">
                 <h3 className="text-md font-semibold text-gray-100 mb-2 flex items-center gap-2"><FlagIcon className="w-5 h-5 text-yellow-400"/>Most Moderated</h3>
                 <div className="space-y-2">
-                    {mostModeratedUsers.map(user => (
+                    {mostModeratedUsers.length > 0 ? mostModeratedUsers.map(user => (
                         <div key={user.user_id} className="flex items-center justify-between bg-gray-800/50 p-2 rounded-lg">
                             <div className="flex items-center gap-3">
                                 <img src={getUserAvatar(user)} alt="" className="w-8 h-8 rounded-full" />
@@ -263,7 +195,7 @@ const Users = () => {
                                 <p className="text-xs text-gray-500">{user.open_cases} open</p>
                             </div>
                         </div>
-                    ))}
+                    )) : <p className="text-center text-gray-400 py-4">No moderated users found.</p>}
                 </div>
             </div>
         </div>
@@ -306,8 +238,12 @@ const Users = () => {
                                 <td className="px-6 py-4 whitespace-nowrap"><div className="flex items-center"><div className="flex-shrink-0 h-10 w-10 relative"><img className="h-10 w-10 rounded-full" src={getUserAvatar(user)} alt="" /><div className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-gray-900 ${getStatusColor(user.status)}`}></div></div><div className="ml-4"><div className="text-sm font-medium text-gray-100">{user.display_name}</div><div className="text-xs text-gray-400">@{user.username}</div></div></div></td>
                                 <td className="px-6 py-4 whitespace-nowrap"><div className="text-sm text-gray-100">{user.total_cases || 0} Total</div><div className="text-xs text-orange-400">{user.open_cases || 0} Open</div></td>
                                 <td className="px-6 py-4 whitespace-nowrap"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getRiskBadgeColor(user.risk_level)}`}>{user.risk_level}</span><div className="text-xs text-gray-400">Score: {user.risk_score || 0}</div></td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">{new Date(user.joined_at).toLocaleDateString()}</td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium"><button onClick={() => setSelectedUserId(user.user_id)} className="text-yellow-400 hover:text-yellow-300 flex items-center gap-1"><EyeIcon className="h-4 w-4" /> View</button></td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">{user.joined_at ? new Date(user.joined_at).toLocaleDateString() : 'N/A'}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                                    <button onClick={() => navigate(`/users/${user.user_id}`)} className="text-yellow-400 hover:text-yellow-300 flex items-center gap-1">
+                                        <EyeIcon className="h-4 w-4" /> View
+                                    </button>
+                                </td>
                             </tr>
                         ))}
                     </tbody>
@@ -324,7 +260,6 @@ const Users = () => {
             )}
         </div>
       </div>
-      <UserDetailsModal userId={selectedUserId} isOpen={!!selectedUserId} onClose={() => setSelectedUserId(null)} />
     </>
   );
 };

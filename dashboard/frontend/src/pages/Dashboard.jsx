@@ -1,3 +1,5 @@
+// dashboard/frontend/src/pages/Dashboard.jsx
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Chart from 'chart.js/auto';
@@ -86,6 +88,7 @@ const DynamicChart = React.memo(({ chartData }) => {
 const Dashboard = () => {
   const navigate = useNavigate();
 
+  // State Management - Kept clean and simple
   const [stats, setStats] = useState({});
   const [systemHealth, setSystemHealth] = useState({});
   const [topUsers, setTopUsers] = useState([]);
@@ -96,20 +99,12 @@ const Dashboard = () => {
   const [showDebug, setShowDebug] = useState(false);
   
   const [timeSeriesData, setTimeSeriesData] = useState(null);
+  const [chartLoading, setChartLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('Messages');
   const [timeRange, setTimeRange] = useState('24h');
 
-  const calculateUserRiskStats = useCallback((users) => {
-    if (!Array.isArray(users) || users.length === 0) return { highRiskUsers: 0, cleanUsers: 0 };
-    let highRiskUsers = 0, cleanUsers = 0;
-    users.forEach(user => {
-      if (user.bot) return;
-      if ((user.risk_level === 'High' || user.risk_level === 'Critical') || (user.total_cases || 0) >= 2) highRiskUsers++;
-      if ((user.total_cases || 0) === 0) cleanUsers++;
-    });
-    return { highRiskUsers, cleanUsers };
-  }, []);
-
+  // --- HONED DATA FETCHING ---
+  // Main data fetch - simplified to rely on the BFF
   const fetchDashboardData = useCallback(async () => {
     try {
       setLoading(true);
@@ -123,137 +118,60 @@ const Dashboard = () => {
       }
       
       const allData = await response.json();
-      const { usersData, botStatus, guildInfo, dashboardStats, moderators, systemHealth } = allData;
-      
-      const newDebugInfo = {};
-      Object.keys(allData).forEach(key => {
-        if (allData[key]?.error) {
-            newDebugInfo[`${key}Error`] = allData[key].error;
-        } else {
-            newDebugInfo[`${key}Success`] = true;
-        }
-      });
-      setDebugInfo(newDebugInfo);
 
-      const users = Array.isArray(usersData?.users) ? usersData.users : [];
-      const riskStats = calculateUserRiskStats(users);
-      const totalCases = users.reduce((sum, user) => sum + (user.total_cases || 0), 0);
-      const openCases = users.reduce((sum, user) => sum + (user.open_cases || 0), 0);
-      
-      setStats({
-        totalMembers: guildInfo?.members?.total || users.length,
-        humanMembers: guildInfo?.members?.humans || users.filter(u => !u.bot).length,
-        botMembers: guildInfo?.members?.bots || users.filter(u => u.bot).length,
-        onlineMembers: guildInfo?.members?.online || users.filter(u => u.status === 'online').length,
-        openCases, totalCases,
-        highRiskUsers: riskStats.highRiskUsers,
-        cleanUsers: riskStats.cleanUsers,
-        totalDeletions: dashboardStats?.deleted_messages?.last_24h || 0,
-        moderatorActivity: moderators?.summary?.total_moderators || 0,
-        botLatency: botStatus?.connection?.latency ? `${botStatus.connection.latency}ms` : 'N/A',
-        ollamaConnected: botStatus?.integrations?.ollama_connected || false,
-        guildName: guildInfo?.guild?.name || 'Server',
-        flaggedUsers: users.filter(u => (u.total_flags || 0) > 0).length,
-        guildChannels: guildInfo?.channels?.total_channels || 0,
-        guildRoles: guildInfo?.roles?.length || 0,
-        serverBoosts: guildInfo?.guild?.premium_subscription_count || 0,
-        serverBoostLevel: guildInfo?.guild?.premium_tier || 0,
-        botOnline: !botStatus?.error,
-        messageVelocity: dashboardStats?.general?.messages_per_hour || 0,
-        avgResponseTime: 'N/A',
-        totalFlags: dashboardStats?.general?.ai_flags || 0,
-      });
+      if (allData.error) {
+        throw new Error(allData.error);
+      }
 
-      setSystemHealth(systemHealth || {});
-      setTopUsers(
-        users
-          .filter(u => !u.bot && u.total_cases > 0)
-          .sort((a,b) => (b.risk_score || 0) - (a.risk_score || 0))
-          .slice(0, 5)
-      );
+      setStats(allData.stats || {});
+      setSystemHealth(allData.systemHealth || {});
+      setTopUsers(allData.topUsers || []);
+      
+      setDebugInfo({ apiStatus: allData.stats ? 'Connected' : 'Error' });
       setLastUpdated(new Date());
     } catch (err) { 
       console.error('Dashboard fetch error:', err);
-      setError('Failed to load critical data. Please ensure the bot and dashboard backend are running.'); 
+      setError('Failed to load dashboard data. Ensure the bot and dashboard backend are running.'); 
     } finally { 
       setLoading(false); 
     }
-  }, [calculateUserRiskStats]);
+  }, []);
   
+  // Chart data fetch - now uses its own dedicated, efficient endpoint
   const fetchChartData = useCallback(async (range) => {
-    const now = new Date();
-    let labels = [];
-    let dataMap = {};
-    
-    if (range === '24h') {
-        for (let i = 23; i >= 0; i--) {
-            const date = new Date(now.getTime() - i * 60 * 60 * 1000);
-            const label = `${date.getHours()}:00`;
-            labels.push(label);
-            dataMap[label] = { messages: 0, cases: 0, kicks: 0, bans: 0, notes: 0 };
+    setChartLoading(true);
+    try {
+        const isDevelopment = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        const response = await fetch(isDevelopment ? `http://localhost:8000/api/pagedata/dashboard-chart?range=${range}` : `/api/pagedata/dashboard-chart?range=${range}`);
+        
+        if (!response.ok) {
+            throw new Error('Failed to fetch chart data');
         }
-    } else {
-        const days = range === '7d' ? 7 : 30;
-        for (let i = days - 1; i >= 0; i--) {
-            const date = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
-            const label = date.toISOString().split('T')[0];
-            labels.push(label);
-            dataMap[label] = { messages: 0, cases: 0, kicks: 0, bans: 0, notes: 0 };
-        }
+        
+        const chartData = await response.json();
+        setTimeSeriesData(chartData);
+    } catch (chartError) {
+        console.error('Chart fetch error:', chartError);
+        setTimeSeriesData(null); // Clear old data on error
+    } finally {
+        setChartLoading(false);
     }
-
-    const isDevelopment = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    const [casesRes, growthDataRes] = await Promise.all([
-      fetch(isDevelopment ? 'http://localhost:8000/api/pagedata/cases' : '/api/pagedata/cases'),
-      fetch(isDevelopment ? 'http://localhost:8000/api/pagedata/users-growth' : '/api/pagedata/users-growth')
-    ]);
-
-    if (casesRes.ok) {
-        const { cases } = await casesRes.json();
-        if(cases) {
-            cases.forEach(c => {
-                const date = new Date(c.created_at);
-                const label = range === '24h' ? `${date.getHours()}:00` : date.toISOString().split('T')[0];
-                
-                if (dataMap[label]) {
-                    dataMap[label].cases++;
-                    if (c.action_type === 'kick') dataMap[label].kicks++;
-                    if (c.action_type === 'ban') dataMap[label].bans++;
-                    if (c.action_type === 'mod_note') dataMap[label].notes++;
-                }
-            });
-        }
-    }
-
-    if (growthDataRes.ok) {
-        const { activityData, trendsData } = await growthDataRes.json();
-        if (range !== '24h' && trendsData?.daily_stats) {
-            trendsData.daily_stats.forEach(day => {
-                if (dataMap[day.date]) {
-                    dataMap[day.date].messages = day.messages;
-                }
-            });
-        } else if (range === '24h' && activityData?.hourly_data) {
-            activityData.hourly_data.forEach(hour => {
-                const label = `${hour.hour}:00`;
-                if(dataMap[label]) dataMap[label].messages = hour.messages;
-            });
-        }
-    }
-    
-    setTimeSeriesData({ labels, dataMap });
   }, []);
 
+  // --- EFFECT HOOKS ---
+  // Initial and interval fetch for main dashboard stats
   useEffect(() => { 
     fetchDashboardData(); 
     const interval = setInterval(fetchDashboardData, 120000); 
     return () => clearInterval(interval); 
   }, [fetchDashboardData]);
 
+  // Fetch chart data when the component mounts or when the time range changes
   useEffect(() => {
     fetchChartData(timeRange);
   }, [timeRange, fetchChartData]);
 
+  // --- HELPER FUNCTIONS (UNCHANGED) ---
   const getHealthColor = p => (p < 60 ? 'bg-green-500' : p < 80 ? 'bg-yellow-500' : 'bg-red-500');
   const getHealthTextColor = p => (p < 60 ? 'text-green-400' : p < 80 ? 'text-yellow-400' : 'text-red-400');
   const formatBytes = (bytes) => {
@@ -273,8 +191,9 @@ const Dashboard = () => {
     return `${minutes}m`;
   };
 
+  // --- CHART DATA PROCESSING (UNCHANGED) ---
   const getChartData = () => {
-    if (!timeSeriesData) return { labels: [], datasets: [] };
+    if (!timeSeriesData || !timeSeriesData.dataMap) return { labels: [], datasets: [] };
 
     const { labels, dataMap } = timeSeriesData;
     const colors = {
@@ -287,7 +206,7 @@ const Dashboard = () => {
 
     const createDataset = (label, dataKey) => ({
         label,
-        data: labels.map(l => dataMap[l]?.[dataKey] || 0),
+        data: labels.map(l => dataMap[l]?.[dataKey.toLowerCase()] || 0),
         borderColor: colors[label],
         backgroundColor: colors[label].replace('0.7', '0.2'),
         fill: true,
@@ -297,14 +216,15 @@ const Dashboard = () => {
     
     let datasets = [];
     if (activeTab === 'All Data') {
-        datasets = Object.keys(colors).map(key => createDataset(key, key.toLowerCase()));
+        datasets = Object.keys(colors).map(key => createDataset(key, key));
     } else {
-        datasets.push(createDataset(activeTab, activeTab.toLowerCase()));
+        datasets.push(createDataset(activeTab, activeTab));
     }
 
     return { labels, datasets };
   };
-
+  
+  // --- RENDER LOGIC (UNCHANGED) ---
   if (loading) return (
     <div className="p-6 h-full flex items-center justify-center">
         <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-yellow-400"></div>
@@ -324,6 +244,7 @@ const Dashboard = () => {
 
   return (
     <div className="p-6 space-y-5 bg-transparent min-h-full">
+      {/* Header section remains the same */}
       <div className="card border-t-2 border-yellow-400/50">
         <div className="px-6 py-4">
           <div className="flex justify-between items-center">
@@ -356,16 +277,18 @@ const Dashboard = () => {
         </div>
       </div>
 
+      {/* Main content grid remains the same */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
+          {/* Stat cards remain the same */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="card hover:scale-105 transition-transform cursor-pointer" onClick={() => navigate('/cases')}>
               <div className="p-4"><div className="flex items-center justify-between"><div><p className="text-sm font-medium text-gray-400">Open Cases</p><p className="text-2xl font-bold text-white">{stats.openCases}</p><p className="text-xs text-gray-500 mt-1">{stats.totalCases} total</p></div><div className="p-3 bg-red-500/20 rounded-lg"><ExclamationTriangleIcon className="h-6 w-6 text-red-400" /></div></div></div>
             </div>
-            <div className="card hover:scale-105 transition-transform cursor-pointer" onClick={() => navigate('/users?filter=high_risk')}>
+            <div className="card hover:scale-105 transition-transform cursor-pointer" onClick={() => navigate('/users')}>
               <div className="p-4"><div className="flex items-center justify-between"><div><p className="text-sm font-medium text-gray-400">High Risk</p><p className="text-2xl font-bold text-white">{stats.highRiskUsers}</p><p className="text-xs text-gray-500 mt-1">{stats.flaggedUsers} flagged</p></div><div className="p-3 bg-orange-500/20 rounded-lg"><UserIcon className="h-6 w-6 text-orange-400" /></div></div></div>
             </div>
-            <div className="card hover:scale-105 transition-transform cursor-pointer" onClick={() => navigate('/users?filter=clean')}>
+            <div className="card hover:scale-105 transition-transform cursor-pointer" onClick={() => navigate('/users')}>
               <div className="p-4"><div className="flex items-center justify-between"><div><p className="text-sm font-medium text-gray-400">Clean Users</p><p className="text-2xl font-bold text-white">{stats.cleanUsers}</p><p className="text-xs text-gray-500 mt-1">{stats.humanMembers > 0 ? Math.round((stats.cleanUsers / stats.humanMembers) * 100) : 0}% of humans</p></div><div className="p-3 bg-green-500/20 rounded-lg"><ShieldCheckIcon className="h-6 w-6 text-green-400" /></div></div></div>
             </div>
             <div className="card hover:scale-105 transition-transform cursor-pointer">
@@ -373,6 +296,7 @@ const Dashboard = () => {
             </div>
           </div>
 
+          {/* Chart section remains the same */}
           <div className="card flex flex-col">
             <div className="p-4">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
@@ -399,9 +323,16 @@ const Dashboard = () => {
                     ))}
                 </div>
             </div>
-            <DynamicChart chartData={getChartData()} />
+            {chartLoading ? (
+                <div className="h-[250px] flex items-center justify-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-400"></div>
+                </div>
+            ) : (
+                <DynamicChart chartData={getChartData()} />
+            )}
           </div>
-
+          
+          {/* Info cards remain the same */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="card">
               <div className="p-6">
@@ -425,7 +356,7 @@ const Dashboard = () => {
                      <div className="flex justify-between"><span className="text-gray-400">Open Cases</span><span className="text-red-400 font-medium">{stats.openCases}</span></div>
                      <div className="flex justify-between"><span className="text-gray-400">AI Flags</span><span className="text-orange-400 font-medium">{stats.totalFlags}</span></div>
                      <div className="flex justify-between"><span className="text-gray-400">Active Moderators</span><span className="text-blue-400 font-medium">{stats.moderatorActivity}</span></div>
-                     <div className="flex justify-between"><span className="text-gray-400">Avg Response</span><span className="text-green-400 font-medium">{stats.avgResponseTime}</span></div>
+                     <div className="flex justify-between"><span className="text-gray-400">Avg Response</span><span className="text-green-400 font-medium">N/A</span></div>
                      <div className="flex justify-between"><span className="text-gray-400">Messages/Hour</span><span className="text-cyan-400 font-medium">{stats.messageVelocity}</span></div>
                  </div>
               </div>
@@ -433,6 +364,7 @@ const Dashboard = () => {
           </div>
         </div>
         
+        {/* Sidebar panels remain the same */}
         <div className="space-y-6">
           <div className="card">
             <div className="p-6">
@@ -485,12 +417,10 @@ const Dashboard = () => {
                     <div className="mt-4 pt-4 border-t border-gray-700">
                         <h4 className="text-sm font-medium text-orange-400 mb-2">API Connection Status</h4>
                         <div className="space-y-1 text-xs">
-                            {Object.entries(debugInfo).map(([key, value]) => (
-                                <div key={key} className={`flex justify-between ${typeof value === 'boolean' ? 'text-green-400' : 'text-red-400'}`}>
-                                <span>{key.replace(/([A-Z])/g, ' $1').replace(/Success|Error/g, '')}:</span>
-                                <span>{typeof value === 'boolean' ? '✓ Connected' : `✗ ${value}`}</span>
-                                </div>
-                            ))}
+                          <div className={`flex justify-between ${debugInfo.apiStatus === 'Connected' ? 'text-green-400' : 'text-red-400'}`}>
+                              <span>Dashboard API:</span>
+                              <span>{debugInfo.apiStatus === 'Connected' ? '✓ Connected' : '✗ Error'}</span>
+                          </div>
                         </div>
                     </div>
                 )}

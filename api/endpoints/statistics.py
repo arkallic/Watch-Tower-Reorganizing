@@ -3,6 +3,8 @@ from fastapi import APIRouter, HTTPException
 from typing import Optional
 from datetime import datetime, timedelta
 from collections import Counter
+
+from . import users # Import the users module to access its functions
 import random
 import discord
 
@@ -322,6 +324,84 @@ async def get_moderation_stats(days: int = 30):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/channels/activity-summary")
+async def get_channel_activity_summary():
+    """
+    Provides a comprehensive, aggregated summary of activity and moderation
+    stats for every text channel in the server, now with REAL message counts.
+    """
+    if not bot or not bot.guilds:
+        raise HTTPException(status_code=503, detail="Bot not connected")
+
+    try:
+        guild = bot.guilds[0]
+        
+        # --- MODIFIED LOGIC: GET REAL DATA ---
+        all_cases = moderation_manager.get_all_cases()
+        all_flags = logger.get_all_flags() if logger and hasattr(logger, 'get_all_flags') else []
+        recent_deletions = deleted_message_logger.get_recent_deletions(24) if deleted_message_logger else []
+        
+        # THIS IS THE FIX: Get real message counts from the ActivityTracker
+        channel_message_counts = activity_tracker.get_channel_message_counts(days_back=30)
+        # --- END MODIFIED LOGIC ---
+        
+        from core.settings import bot_settings
+        watched_channel_ids = bot_settings.get("watch_channels", [])
+
+        cases_by_channel = {}
+        flags_by_channel = {}
+        deletions_by_channel = {}
+
+        for case in all_cases:
+            ch_id = str(case.get("channel_id"))
+            if ch_id not in cases_by_channel: cases_by_channel[ch_id] = []
+            cases_by_channel[ch_id].append(case)
+
+        for flag in all_flags:
+            ch_id = str(flag.get("channel_id"))
+            if ch_id not in flags_by_channel: flags_by_channel[ch_id] = 0
+            flags_by_channel[ch_id] += 1
+            
+        for deletion in recent_deletions:
+            ch_id = str(deletion.get("channel_id"))
+            if ch_id not in deletions_by_channel: deletions_by_channel[ch_id] = 0
+            deletions_by_channel[ch_id] += 1
+
+        processed_channels = []
+        for channel in guild.text_channels:
+            ch_id_str = str(channel.id)
+            channel_cases = cases_by_channel.get(ch_id_str, [])
+
+            processed_channels.append({
+                "id": ch_id_str,
+                "name": channel.name,
+                "category": channel.category.name if channel.category else "Uncategorized",
+                "position": channel.position,
+                "is_watched": channel.id in watched_channel_ids,
+                "message_count": channel_message_counts.get(ch_id_str, 0), # Using REAL data now
+                "case_count": len(channel_cases),
+                "open_case_count": len([c for c in channel_cases if c.get("status") == "Open"]),
+                "flag_count": flags_by_channel.get(ch_id_str, 0),
+                "deletion_count": deletions_by_channel.get(ch_id_str, 0),
+                "cases": channel_cases,
+                "recent_deletions": [d for d in recent_deletions if str(d.get("channel_id")) == ch_id_str][:10]
+            })
+
+        overview = {
+            "total_channels": len(processed_channels),
+            "total_messages": sum(c['message_count'] for c in processed_channels),
+            "total_cases": sum(c['case_count'] for c in processed_channels),
+            "total_flags": sum(c['flag_count'] for c in processed_channels),
+            "total_deletions": sum(c['deletion_count'] for c in processed_channels),
+        }
+
+        return {"overview": overview, "channels": processed_channels}
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/export/csv")
 async def export_cases_csv():
     """Export moderation cases to CSV"""
@@ -337,4 +417,82 @@ async def export_cases_csv():
         }
         
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@router.get("/user-profile/{user_id}")
+async def get_user_profile_data(user_id: int):
+    """
+    Provides a comprehensive, all-in-one data payload for a single user's profile page.
+    FINAL VERSION: Includes action breakdown and full deletion logs.
+    """
+    if not bot or not bot.guilds:
+        raise HTTPException(status_code=503, detail="Bot not connected")
+    
+    try:
+        guild = bot.guilds[0]
+        member = guild.get_member(user_id)
+        if not member:
+            raise HTTPException(status_code=404, detail="User not found in this server")
+
+        # 1. Gather all raw data sources
+        all_user_cases = [c for c in moderation_manager.get_all_cases() if str(c.get("user_id")) == str(user_id)]
+        user_activity = activity_tracker.get_user_profile_activity(user_id)
+        user_deleted_messages = deleted_message_logger.get_user_deleted_messages(user_id, hours=72)
+        all_user_flags = logger.get_all_flags(user_id=user_id) if logger else []
+
+        # 2. Process Data: Action Breakdown (from the original modal logic)
+        action_breakdown = {
+            "warns": len([c for c in all_user_cases if c.get("action_type") == "warn"]),
+            "timeouts": len([c for c in all_user_cases if c.get("action_type") == "timeout"]),
+            "kicks": len([c for c in all_user_cases if c.get("action_type") == "kick"]),
+            "bans": len([c for c in all_user_cases if c.get("action_type") == "ban"]),
+            "mod_notes": len([c for c in all_user_cases if c.get("action_type") == "mod_note"])
+        }
+
+        top_channels_enriched = []
+        if user_activity.get("top_channels"):
+            sorted_channels = sorted(user_activity["top_channels"].items(), key=lambda item: item[1], reverse=True)[:5]
+            for ch_id, count in sorted_channels:
+                channel = guild.get_channel(int(ch_id))
+                top_channels_enriched.append({"name": channel.name if channel else f"ID: {ch_id}", "count": count})
+
+        heatmap_data = [{"date": date, "count": count} for date, count in user_activity["heatmap_data"].items()]
+        
+        # 3. Assemble the final, complete payload
+        payload = {
+            "profile": {
+                "user_id": str(member.id),
+                "username": member.name,
+                "display_name": member.display_name,
+                "discriminator": member.discriminator,
+                "avatar_url": str(member.display_avatar.url),
+                "status": str(member.status),
+                "created_at": member.created_at.isoformat(),
+                "joined_at": member.joined_at.isoformat() if member.joined_at else None,
+                "account_age_days": (datetime.now() - member.created_at.replace(tzinfo=None)).days,
+                "server_tenure_days": (datetime.now() - member.joined_at.replace(tzinfo=None)).days if member.joined_at else 0,
+                "roles": [{"name": r.name, "color": str(r.color)} for r in member.roles if r.name != "@everyone"],
+                "permissions": {p: v for p, v in member.guild_permissions if p in ['administrator', 'manage_messages', 'kick_members', 'ban_members']}
+            },
+            "stats": {
+                "total_cases": len(all_user_cases),
+                "open_cases": len([c for c in all_user_cases if c.get("status") == "Open"]),
+                "risk_info": users.calculate_user_risk(all_user_cases, all_user_flags, user_deleted_messages),
+                "messages_30d": user_activity["message_count_30d"],
+                "total_flags": len(all_user_flags),
+                "total_deletions": len(user_deleted_messages),
+                "action_breakdown": action_breakdown, # ADDED: Include the breakdown
+            },
+            "case_history": all_user_cases,
+            "recent_deletions": user_deleted_messages[:20], # ADDED: Send the full log objects
+            "activity_analytics": {
+                "top_channels": top_channels_enriched,
+                "heatmap_data": heatmap_data,
+            }
+        }
+        return payload
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))

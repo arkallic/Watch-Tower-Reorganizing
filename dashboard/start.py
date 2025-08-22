@@ -188,7 +188,7 @@ class DashboardStarter:
             sys.exit(1)
         
         print("\n" + "=" * 50)
-        print("🎉 FlaggerBadger Dashboard is ready!")
+        print("🎉 Watch Tower Dashboard is ready!")
         print("📊 Dashboard: http://localhost:3000")
         print("🔧 API Docs: http://localhost:8000/docs")
         print("\nPress Ctrl+C to stop the dashboard")

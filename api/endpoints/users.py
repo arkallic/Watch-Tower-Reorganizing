@@ -92,17 +92,20 @@ async def get_all_users():
     
     guild = bot.guilds[0]
     all_cases = moderation_manager.get_all_cases()
-    # NOTE: Assumes these methods exist on your loggers to fetch all records.
-    # If they don't, you may need to add them.
     all_flags = logger.get_all_flags() if logger and hasattr(logger, 'get_all_flags') else []
     all_deletions = deleted_message_logger.get_all_deletions() if deleted_message_logger and hasattr(deleted_message_logger, 'get_all_deletions') else []
 
     users_data = []
     for member in guild.members:
         user_id = member.id
-        user_cases = [c for c in all_cases if c.get("user_id") == user_id]
-        user_flags = [f for f in all_flags if f.get("user_id") == user_id]
-        user_deletions = [d for d in all_deletions if d.get("author_id") == user_id]
+        
+        # --- THIS IS THE FIX ---
+        # Ensure we compare strings to strings for consistency
+        user_cases = [c for c in all_cases if str(c.get("user_id")) == str(user_id)]
+        # --- END OF FIX ---
+
+        user_flags = [f for f in all_flags if str(f.get("user_id")) == str(user_id)]
+        user_deletions = [d for d in all_deletions if str(d.get("author_id")) == str(user_id)]
 
         risk_info = calculate_user_risk(user_cases, user_flags, user_deletions)
 

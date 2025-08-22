@@ -1,18 +1,16 @@
-// dashboard/frontend/src/pages/Moderators.jsx
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useApi } from '../context/ApiContext';
 import {
   MagnifyingGlassIcon, ArrowPathIcon, UserGroupIcon, TrophyIcon, ShieldCheckIcon, BoltIcon,
 } from '@heroicons/react/24/outline';
-import ModeratorDetailsModal from '../components/ModeratorDetailsModal';
 
-// NEW: Enhanced ModeratorCard with special styling for top ranks
-const ModeratorCard = ({ moderator, onClick, rank }) => {
+const ModeratorCard = ({ moderator, rank }) => {
+    const navigate = useNavigate();
     const isTopPerformer = rank <= 3;
     const isNumberOne = rank === 1;
     const efficiency = moderator.efficiency_score || 0;
     
-    // Dynamic class generation for card styling
     const cardClasses = useMemo(() => {
         let base = 'relative card p-4 space-y-4 transition-all duration-300 hover:scale-[1.03] transform cursor-pointer';
         if (isNumberOne) {
@@ -26,7 +24,7 @@ const ModeratorCard = ({ moderator, onClick, rank }) => {
     }, [isNumberOne, isTopPerformer]);
 
     return (
-      <div className={cardClasses} onClick={() => onClick(moderator)}>
+      <div className={cardClasses} onClick={() => navigate(`/moderators/${moderator.moderator_id}`)}>
         {isTopPerformer && (
           <div className={`absolute top-3 right-3 z-20 flex items-center px-2 py-1 rounded-full text-xs font-bold border ${
               isNumberOne 
@@ -67,7 +65,6 @@ const Moderators = () => {
   const [moderators, setModerators] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [selectedModerator, setSelectedModerator] = useState(null);
   const [summary, setSummary] = useState({});
   const [searchTerm, setSearchTerm] = useState('');
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -150,19 +147,11 @@ const Moderators = () => {
             <ModeratorCard
               key={moderator.moderator_id}
               moderator={moderator}
-              onClick={setSelectedModerator}
               rank={moderator.rank}
             />
           ))}
         </div>
       </div>
-
-      {selectedModerator && (
-        <ModeratorDetailsModal
-          moderatorId={selectedModerator.moderator_id}
-          onClose={() => setSelectedModerator(null)}
-        />
-      )}
     </>
   );
 };

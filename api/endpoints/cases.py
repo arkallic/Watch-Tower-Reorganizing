@@ -60,73 +60,95 @@ async def delete_case(user_id: int, case_number: int):
 async def get_cases_enhanced():
     """Get all cases with enhanced user information including avatars - MATCHES ORIGINAL API_calls.py"""
     try:
-        # Use the exact same path as original - this is critical!
-        cases_path = Path("cases/user_moderation_data.json")
-        if not cases_path.exists():
+        # Updated to read individual case files instead of consolidated file
+        cases_dir = Path("cases")
+        if not cases_dir.exists():
+            print(f"❌ Bot API: Cases directory not found")
             return {"cases": []}
         
-        with open(cases_path, 'r', encoding='utf-8') as f:
-            user_cases = json.load(f)
+        print(f"🔍 Bot API: Reading individual case files from {cases_dir.absolute()}")
         
         all_cases = []
+        case_files = list(cases_dir.glob("case_*.json"))
+        print(f"📊 Bot API: Found {len(case_files)} case files")
         
-        # Get Discord bot instance for user lookups - exact same logic as original
+        # Get Discord bot instance for user lookups
         guild = None
         if bot and bot.is_ready() and bot.guilds:
             guild = bot.guilds[0]
+            print(f"✅ Bot API: Bot is ready, guild: {guild.name}")
+        else:
+            print(f"❌ Bot API: Bot not ready or no guilds")
         
-        for user_id, user_data in user_cases.items():
-            # Try to get Discord user info - exact same logic as original
-            discord_user = None
-            user_avatar_url = None
-            
-            if guild:
-                try:
-                    discord_user = guild.get_member(int(user_id))
-                    if discord_user:
-                        user_avatar_url = str(discord_user.display_avatar.url)
-                except:
+        for case_file in case_files:
+            try:
+                print(f"📋 Bot API: Processing {case_file.name}")
+                
+                with open(case_file, 'r', encoding='utf-8') as f:
+                    case = json.load(f)
+                
+                user_id = str(case.get('user_id'))
+                
+                # Try to get Discord user info for enhanced data
+                discord_user = None
+                user_avatar_url = case.get('user_avatar_url')  # Use existing if available
+                
+                if guild and not user_avatar_url:
                     try:
-                        discord_user = await bot.fetch_user(int(user_id))
+                        discord_user = guild.get_member(int(user_id))
                         if discord_user:
                             user_avatar_url = str(discord_user.display_avatar.url)
                     except:
-                        pass
-            
-            for case in user_data.get('cases', []):
-                # CRITICAL: Use exact same field mapping as original API_calls.py
+                        try:
+                            discord_user = await bot.fetch_user(int(user_id))
+                            if discord_user:
+                                user_avatar_url = str(discord_user.display_avatar.url)
+                        except:
+                            pass
+                
+                # Create enhanced case data with proper field mapping
                 case_data = {
                     'case_number': case.get('case_number'),
                     'user_id': user_id,
                     'username': case.get('username') or (discord_user.name if discord_user else 'Unknown'),
                     'display_name': case.get('display_name') or (discord_user.display_name if discord_user else None),
                     'user_avatar_url': user_avatar_url,
-                    'action_type': case.get('action_taken', 'Unknown'),  # Note: 'action_taken' not 'action_type'
+                    'action_type': case.get('action_type', 'Unknown'),
                     'moderator_id': case.get('moderator_id'),
                     'moderator_name': case.get('moderator_name', 'Unknown'),
                     'reason': case.get('reason', ''),
                     'internal_comment': case.get('internal_comment', ''),
                     'severity': case.get('severity', 'Low'),
                     'status': case.get('status', 'Open'),
-                    'created_at': case.get('timestamp'),  # Note: 'timestamp' not 'created_at'
+                    'created_at': case.get('created_at') or case.get('timestamp'),
                     'resolved_at': case.get('resolved_at'),
                     'duration': case.get('duration'),
                     'dm_sent': case.get('dm_sent', False),
                     'resolvable': case.get('resolvable', 'Yes'),
                     'tags': case.get('tags', []),
                     'flagged_message': case.get('flagged_message'),
-                    'message_history': case.get('message_history', []),
+                    'message_history': case.get('recent_messages', []),  # Note: using 'recent_messages'
                     'attachments': case.get('attachments', []),
                     'resolution_method': case.get('resolution_method'),
                     'resolution_comment': case.get('resolution_comment'),
                     'resolved_by_name': case.get('resolved_by_name')
                 }
                 all_cases.append(case_data)
+                print(f"✅ Bot API: Added case #{case.get('case_number')} for user {user_id}")
+                
+            except Exception as e:
+                print(f"❌ Bot API: Error processing {case_file.name}: {e}")
+                continue
         
-        # Sort by case number (newest first) - exact same as original
+        print(f"📊 Bot API: Total cases processed: {len(all_cases)}")
+        
+        # Sort by case number (newest first)
         all_cases.sort(key=lambda x: x.get('case_number', 0), reverse=True)
         
         return {"cases": all_cases}
         
     except Exception as e:
-        return {"error": str(e)}, 500
+        print(f"❌ Bot API: Error in get_cases_enhanced: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"error": str(e), "cases": []}

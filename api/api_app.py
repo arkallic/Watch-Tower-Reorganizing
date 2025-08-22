@@ -71,7 +71,7 @@ def _initialize_endpoint_dependencies():
         )
         
         # Moderators endpoint
-        moderators.initialize_dependencies(bot, moderation_manager, bot_settings)
+        moderators.initialize_dependencies(bot, moderation_manager, bot_settings, activity_tracker)
         
         # Analytics endpoint - UPDATED: Add bot dependency for trends endpoint
         analytics.initialize_dependencies(moderation_manager, bot)

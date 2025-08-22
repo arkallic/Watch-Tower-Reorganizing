@@ -10,6 +10,9 @@ import CaseDeleteModal from '../components/CaseDeleteModal';
 
 const Cases = () => {
   const [cases, setCases] = useState([]);
+  const [stats, setStats] = useState({ total: 0, open: 0, resolved: 0, critical: 0, today: 0, thisWeek: 0 });
+  const [chartData, setChartData] = useState([]);
+  const [severityData, setSeverityData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
@@ -38,7 +41,11 @@ const Cases = () => {
       if (!response.ok) throw new Error(`API Error: ${response.status}`);
       const data = await response.json();
       if (data.error) throw new Error(data.error);
+      
       setCases(data.cases || []);
+      setStats(data.stats || { total: 0, open: 0, resolved: 0, critical: 0, thisWeek: 0 });
+      setChartData(data.chartData || []);
+      setSeverityData(data.severityData || []);
       setLastUpdated(new Date());
     } catch (err) {
       console.error('Error fetching cases:', err);
@@ -54,47 +61,6 @@ const Cases = () => {
     const interval = setInterval(fetchData, 60000);
     return () => clearInterval(interval);
   }, [fetchData]);
-
-  const stats = useMemo(() => {
-    if (!cases.length) return { total: 0, open: 0, resolved: 0, critical: 0, today: 0, thisWeek: 0 };
-    const now = new Date();
-    const todayStr = now.toDateString();
-    const weekAgo = new Date(new Date().setDate(now.getDate() - 7));
-    return {
-      total: cases.length,
-      open: cases.filter(c => c.status === 'Open').length,
-      resolved: cases.filter(c => c.status === 'Resolved' || c.status === 'Auto-Resolved').length,
-      critical: cases.filter(c => c.severity === 'Critical').length,
-      today: cases.filter(c => new Date(c.created_at).toDateString() === todayStr).length,
-      thisWeek: cases.filter(c => new Date(c.created_at) >= weekAgo).length
-    };
-  }, [cases]);
-
-  const chartData = useMemo(() => {
-    const dailyData = {};
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const key = d.toISOString().split('T')[0];
-      dailyData[key] = { name: d.toLocaleDateString('en-US', { weekday: 'short' }), Total: 0, Critical: 0, Resolved: 0 };
-    }
-    cases.forEach(c => {
-      const key = c.created_at.split('T')[0];
-      if (dailyData[key]) {
-        dailyData[key].Total++;
-        if (c.severity === 'Critical') dailyData[key].Critical++;
-        if (c.status === 'Resolved' || c.status === 'Auto-Resolved') dailyData[key].Resolved++;
-      }
-    });
-    return Object.values(dailyData);
-  }, [cases]);
-
-  const severityData = useMemo(() => [
-    { name: 'Low', value: cases.filter(c => c.severity === 'Low').length, color: '#22c55e' },
-    { name: 'Medium', value: cases.filter(c => c.severity === 'Medium').length, color: '#f59e0b' },
-    { name: 'High', value: cases.filter(c => c.severity === 'High').length, color: '#ef4444' },
-    { name: 'Critical', value: cases.filter(c => c.severity === 'Critical').length, color: '#a855f7' }
-  ].filter(item => item.value > 0), [cases]);
 
   const filteredAndSortedCases = useMemo(() => {
     return cases
@@ -114,11 +80,10 @@ const Cases = () => {
         const aVal = a[sortField];
         const bVal = b[sortField];
         if (sortField === 'created_at') {
-          return sortDirection === 'asc' ? new Date(aVal) - new Date(bVal) : new Date(bVal) - new Date(aVal);
+            if (!aVal) return 1; if (!bVal) return -1;
+            return sortDirection === 'asc' ? new Date(aVal) - new Date(bVal) : new Date(bVal) - new Date(aVal);
         }
-        if (typeof aVal === 'string') {
-          return sortDirection === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
-        }
+        if (typeof aVal === 'string') return sortDirection === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
         return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
       });
   }, [cases, searchTerm, filters, sortField, sortDirection]);
@@ -316,11 +281,11 @@ const Cases = () => {
                         {paginatedCases.map(c => (
                             <tr key={`${c.user_id}-${c.case_number}`} className="hover:bg-gray-800">
                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">#{c.case_number}</td>
-                                <td className="px-6 py-4 whitespace-nowrap"><div className="flex items-center"><img className="h-8 w-8 rounded-full" src={c.user_avatar_url || `https://cdn.discordapp.com/embed/avatars/${(c.username.charCodeAt(0)) % 5}.png`} alt="" /><div className="ml-3"><div className="text-sm font-medium text-gray-100">{c.display_name}</div><div className="text-xs text-gray-400">@{c.username}</div></div></div></td>
+                                <td className="px-6 py-4 whitespace-nowrap"><div className="flex items-center"><img className="h-8 w-8 rounded-full" src={c.user_avatar_url || `https://cdn.discordapp.com/embed/avatars/0.png`} alt="" /><div className="ml-3"><div className="text-sm font-medium text-gray-100">{c.display_name}</div><div className="text-xs text-gray-400">@{c.username}</div></div></div></td>
                                 <td className="px-6 py-4"><div className="text-sm text-gray-100">{c.action_type}</div><div className="text-xs text-gray-400 max-w-xs truncate" title={c.reason}>{c.reason}</div></td>
                                 <td className="px-6 py-4 whitespace-nowrap"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full border ${getSeverityBadge(c.severity)}`}>{c.severity}</span></td>
                                 <td className="px-6 py-4 whitespace-nowrap"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusBadge(c.status)}`}>{c.status}</span></td>
-                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">{new Date(c.created_at).toLocaleString()}</td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">{c.created_at ? new Date(c.created_at).toLocaleString() : 'N/A'}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-100">{c.moderator_name}</td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                     <div className="flex items-center gap-2">

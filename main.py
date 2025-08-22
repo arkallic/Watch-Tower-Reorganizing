@@ -1,22 +1,8 @@
-# main.py
-"""
-      ,   ,
-     /////
-    /////       Watch Tower
-   |~~~|        ========================================================
-   |[] |        An advanced, AI-powered moderation bot for Discord.
-  /_____\       Features real-time ModString evaluation via Watch Tower Studio,
-   |   |        a Dashboard, comprehensive logging, and powerful moderation tools.
-   |   |
-  /_____\
-"""
-
 import os
+import asyncio
 from colorama import Fore, Style
+import discord
 
-# ================================
-# SYSTEM INITIALIZATION
-# ================================
 from core.startup import ApplicationStartup
 from core.dependency_container import DependencyContainer
 from core.bot import WatchTowerBot
@@ -27,66 +13,74 @@ async def main():
     """Main application entry point"""
     print(f"{Fore.CYAN}🏗️  Starting Watch Tower Bot...{Style.RESET_ALL}")
     
-    # Initialize system
     ApplicationStartup.initialize_system()
-    print(f"{Fore.GREEN}✅ System initialized{Style.RESET_ALL}")
-    
-    # Initialize dependencies
     container = DependencyContainer()
     container.initialize_all_dependencies()
-    print(f"{Fore.GREEN}✅ Dependencies initialized{Style.RESET_ALL}")
-    
-    # Debug: Print available dependencies
     deps = container.get_all_dependencies()
-    print(f"{Fore.YELLOW}🔍 Available dependencies: {list(deps.keys())}{Style.RESET_ALL}")
     
-    # Create and configure bot
     bot = WatchTowerBot()
     container.initialize_bot_dependent_components(bot)
     bot.inject_dependencies(deps)
-    print(f"{Fore.GREEN}✅ Bot configured{Style.RESET_ALL}")
     
-    # Initialize API dependencies
-    try:
-        # Check if bot_settings exists and fallback if needed
-        bot_settings_instance = deps.get('bot_settings')
-        if bot_settings_instance is None:
-            print(f"{Fore.YELLOW}⚠️ bot_settings not found in dependencies, using config instead{Style.RESET_ALL}")
-            # Try to get it from config
-            config = deps.get('config')
-            if config and hasattr(config, 'settings'):
-                bot_settings_instance = config.settings
-            else:
-                # Import directly as fallback
-                from core.settings import bot_settings
-                bot_settings_instance = bot_settings
-                print(f"{Fore.YELLOW}⚠️ Using direct import fallback for bot_settings{Style.RESET_ALL}")
+    ############################################################################
+    # BOT EVENT LISTENERS
+    ############################################################################
+    
+    @bot.event
+    async def on_raw_message_delete(payload: discord.RawMessageDeleteEvent):
+        """
+        Handles ALL message deletions and checks audit log to find the deleter.
+        This is the single source of truth for deleted message logging.
+        """
+        # We need the logger dependency to do anything
+        if not (deleted_logger := bot.get_dependency('deleted_message_logger')):
+            return
+
+        # Log the deletion immediately from the payload data
+        await deleted_logger.log_raw_deleted_message(payload)
+
+        # Now, try to find out WHO deleted it from the audit log
+        await asyncio.sleep(2) # Wait for audit log to populate
         
-        initialize_api_dependencies(
-            bot, 
-            deps['config'], 
-            deps['logger'], 
-            deps['ollama'],
-            deps['moderation_manager'], 
-            deps['deleted_message_logger'],
-            deps['activity_tracker'], 
-            bot_settings_instance,
-            deps['modstring_manager']
-        )
-        print(f"{Fore.GREEN}✅ API dependencies initialized{Style.RESET_ALL}")
-    except Exception as e:
-        print(f"{Fore.RED}❌ API initialization error: {e}{Style.RESET_ALL}")
-        import traceback
-        traceback.print_exc()
+        guild = bot.get_guild(payload.guild_id)
+        if not guild:
+            return
+
+        try:
+            # We look for a "message_delete" action in the audit log.
+            async for entry in guild.audit_logs(limit=5, action=discord.AuditLogAction.message_delete):
+                # The entry's `target` will be the user whose message was deleted.
+                # The entry's `user` is the moderator who performed the deletion.
+                # We match based on the channel the deletion happened in.
+                if entry.extra.channel.id == payload.channel_id:
+                    # We found a log of a mod deleting a message in this channel.
+                    # Now, we update our existing log entry with the moderator's name.
+                    await deleted_logger.update_log_with_deleter(
+                        message_id=payload.message_id,
+                        deleter_id=entry.user.id,
+                        deleter_name=entry.user.display_name
+                    )
+                    # We found the entry, no need to keep searching.
+                    return
+        except discord.Forbidden:
+            # This is not an error, just means the bot can't check the audit log.
+            pass
+        except Exception as e:
+            print(f"{Fore.YELLOW}⚠️  Could not process audit log for deleted message: {e}{Style.RESET_ALL}")
+
+    ############################################################################
+    # API AND BOT STARTUP
+    ############################################################################
     
-    # Start API server
-    if start_api_server():
-        print(f"{Fore.GREEN}✅ API server started on http://127.0.0.1:8001{Style.RESET_ALL}")
-    else:
-        print(f"{Fore.RED}❌ Failed to start API server{Style.RESET_ALL}")
+    initialize_api_dependencies(
+        bot, deps['config'], deps['logger'], deps['ollama'],
+        deps['moderation_manager'], deps['deleted_message_logger'],
+        deps['activity_tracker'], deps['bot_settings'],
+        deps['modstring_manager']
+    )
     
-    # Start bot
-    print(f"{Fore.BLUE}🤖 Starting Discord bot...{Style.RESET_ALL}")
+    start_api_server()
+    
     token = os.getenv("DISCORD_TOKEN")
     if not token:
         print(f"{Fore.RED}❌ DISCORD_TOKEN not found in environment variables{Style.RESET_ALL}")
@@ -95,13 +89,9 @@ async def main():
     try:
         await bot.start(token)
     except KeyboardInterrupt:
-        print(f"\n{Fore.YELLOW}⏹️  Shutting down gracefully...{Style.RESET_ALL}")
         await bot.close()
-    except Exception as e:
-        print(f"{Fore.RED}❌ Bot startup error: {e}{Style.RESET_ALL}")
 
 if __name__ == "__main__":
-    import asyncio
     try:
         asyncio.run(main())
     except KeyboardInterrupt:

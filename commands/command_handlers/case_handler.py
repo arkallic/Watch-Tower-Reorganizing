@@ -150,12 +150,13 @@ class CaseHandler(BaseHandler):
             "moderator_id": interaction.user.id,
             "display_name": user.display_name,
             "username": user.name,
-            "created_at": datetime.now().isoformat()
+            "created_at": datetime.now().isoformat(),
+            "channel": interaction.channel,
         }
         
         # Use new case creation method
         case_number = await self.moderation_manager.create_moderation_case(
-    user.id, action_data, interaction.guild, self.moderation_manager.bot
+    user.id, action_data, interaction.guild, interaction.client
 )
         
         return case_number

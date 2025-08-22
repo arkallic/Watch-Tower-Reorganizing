@@ -109,6 +109,77 @@ class ActivityTracker:
         except Exception as e:
             print(f"{Fore.YELLOW}⚠️ Error tracking activity: {e}{Style.RESET_ALL}")
     
+    def get_channel_message_counts(self, days_back: int = 30) -> Dict[str, int]:
+        """
+        Reads the message activity log and returns a dictionary mapping
+        channel_id to its message count over a given period.
+        """
+        counts = {}
+        if not os.path.exists(self.message_activity_file):
+            return counts
+
+        cutoff_date = datetime.now() - timedelta(days=days_back)
+
+        try:
+            with open(self.message_activity_file, 'r', encoding='utf-8') as f:
+                activities = json.load(f)
+            
+            for activity in activities:
+                try:
+                    timestamp = datetime.fromisoformat(activity.get("timestamp", ""))
+                    if timestamp >= cutoff_date:
+                        channel_id = str(activity.get("channel_id"))
+                        if channel_id:
+                            counts[channel_id] = counts.get(channel_id, 0) + 1
+                except (ValueError, TypeError):
+                    continue
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"{Fore.YELLOW}⚠️  Could not read activity file for counting: {e}{Style.RESET_ALL}")
+
+        return counts
+
+    def get_user_profile_activity(self, user_id: int, days_back: int = 365) -> Dict[str, Any]:
+        """
+        Generates a comprehensive activity profile for a single user,
+        including heatmap data, top channels, and summary stats.
+        """
+        summary = {
+            "message_count_30d": 0,
+            "voice_minutes_30d": 0,
+            "reactions_30d": 0,
+            "top_channels": {},
+            "heatmap_data": {}
+        }
+        
+        cutoff_30d = datetime.now() - timedelta(days=30)
+        cutoff_year = datetime.now() - timedelta(days=days_back)
+
+        # Process Message Activity
+        try:
+            with open(self.message_activity_file, 'r', encoding='utf-8') as f:
+                activities = json.load(f)
+            
+            user_messages = [a for a in activities if a.get("user_id") == user_id]
+
+            for msg in user_messages:
+                ts = datetime.fromisoformat(msg.get("timestamp", ""))
+                if ts >= cutoff_year:
+                    date_str = ts.strftime('%Y-%m-%d')
+                    summary["heatmap_data"][date_str] = summary["heatmap_data"].get(date_str, 0) + 1
+
+                if ts >= cutoff_30d:
+                    summary["message_count_30d"] += 1
+                    ch_id = str(msg.get("channel_id"))
+                    if ch_id:
+                        summary["top_channels"][ch_id] = summary["top_channels"].get(ch_id, 0) + 1
+        except (IOError, json.JSONDecodeError):
+            pass # File might not exist or be empty, which is fine
+
+        # You can add similar processing for voice and reactions if needed
+        
+        return summary
+
+
     def get_user_activity_summary(self, user_id: int, hours_back: int = 24) -> Dict[str, Any]:
         """Get activity summary for a user"""
         cutoff_time = datetime.now() - timedelta(hours=hours_back)

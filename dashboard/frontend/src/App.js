@@ -3,8 +3,10 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
 import Users from './pages/Users';
+import UserProfile from './pages/UserProfile';
 import Cases from './pages/Cases';
 import Moderators from './pages/Moderators';
+import ModeratorProfile from './pages/ModeratorProfile';
 import Analytics from './pages/Analytics';
 import Settings from './pages/Settings';
 import Reports from './pages/Reports';
@@ -16,6 +18,7 @@ import FirstTimeSetup from './setup/pages/FirstTimeSetup';
 import Channels from './pages/Channels';
 import Spotlight from './pages/Spotlight';
 import SpotlightGate from './spotlight-gate/SpotlightGate';
+
 
 function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -90,8 +93,10 @@ return (
                     <Route path="/" element={<Dashboard />} />
                     <Route path="/dashboard" element={<Dashboard />} />
                     <Route path="/users" element={<Users />} />
+                    <Route path="/users/:userId" element={<UserProfile />} />
                     <Route path="/cases" element={<Cases />} />
                     <Route path="/moderators" element={<Moderators />} />
+                    <Route path="/moderators/:moderatorId" element={<ModeratorProfile />} />
                     <Route path="/spotlight" element={<Spotlight />} />
                     <Route path="/channels" element={<Channels />} />
                     <Route path="/analytics" element={<Analytics />} />

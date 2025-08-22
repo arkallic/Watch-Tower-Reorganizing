@@ -87,3 +87,28 @@
 * {
   transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out, border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
 }
+
+/* ==========================================
+   NEW HEATMAP STYLES
+   ========================================== */
+.heatmap-container .react-calendar-heatmap {
+  height: auto;
+}
+
+.heatmap-container .react-calendar-heatmap .react-calendar-heatmap-week,
+.heatmap-container .react-calendar-heatmap .react-calendar-heatmap-month-label {
+  font-size: 10px !important;
+  fill: #9ca3af; /* Tailwind gray-400 */
+}
+
+.heatmap-container .react-calendar-heatmap rect:hover {
+  stroke: #f59e0b; /* Tailwind amber-500 */
+  stroke-width: 2px;
+}
+
+/* Color scale for the heatmap squares */
+.color-empty { fill: #374151; } /* gray-700 */
+.color-scale-1 { fill: #ca8a04; } /* yellow-600 */
+.color-scale-2 { fill: #eab308; } /* yellow-500 */
+.color-scale-3 { fill: #facc15; } /* yellow-400 */
+.color-scale-4 { fill: #fde047; } /* yellow-300 */
