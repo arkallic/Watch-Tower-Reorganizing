@@ -15,9 +15,9 @@ from colorama import Fore, Style
 class DeletedMessageLogger:
     """Handles the logging, cleanup, and attachment management of deleted Discord messages."""
     
-    # --------------------------------------------------------------------------
+    ############################################################################
     # INITIALIZATION & FILE SETUP
-    # --------------------------------------------------------------------------
+    ############################################################################
     
     def __init__(self):
         self.script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -39,9 +39,9 @@ class DeletedMessageLogger:
             with open(self.deleted_messages_file, 'w', encoding='utf-8') as f:
                 json.dump([], f)
 
-    # --------------------------------------------------------------------------
+    ############################################################################
     # CORE LOGGING & UPDATE LOGIC
-    # --------------------------------------------------------------------------
+    ############################################################################
 
     async def log_raw_deleted_message(self, payload: discord.RawMessageDeleteEvent):
         """Logs a deleted message from a raw event, which works for cached and uncached messages."""
@@ -96,9 +96,9 @@ class DeletedMessageLogger:
         except (IOError, json.JSONDecodeError):
             pass
 
-    # --------------------------------------------------------------------------
+    ############################################################################
     # DATA MANAGEMENT & RETRIEVAL
-    # --------------------------------------------------------------------------
+    ############################################################################
 
     def save_logs(self, logs: List[Dict[str, Any]]):
         """Saves the log file and handles cleanup of old entries based on settings."""
@@ -126,7 +126,6 @@ class DeletedMessageLogger:
                 else:
                     logs_to_remove.append(log)
             except (ValueError, KeyError, TypeError):
-                # If a log has a bad timestamp, treat it as old to be safe
                 logs_to_remove.append(log)
         
         for log in logs_to_remove:
@@ -136,7 +135,7 @@ class DeletedMessageLogger:
                         if os.path.exists(path):
                             os.remove(path)
                     except OSError:
-                        pass # Ignore errors if file is already gone
+                        pass
         
         logs[:] = logs_to_keep
 
@@ -153,20 +152,44 @@ class DeletedMessageLogger:
         user_logs = [
             log for log in all_logs
             if str(log.get("user_id")) == str(user_id) and 
+               log.get("deleted_at") and 
                datetime.fromisoformat(log.get("deleted_at")) >= cutoff_time
         ]
         
         user_logs.sort(key=lambda x: x.get("deleted_at", ""), reverse=True)
         return user_logs
+    
+    # --- THIS IS THE RESTORED METHOD ---
+    def get_recent_deletions(self, hours: int = 24) -> List[Dict]:
+        """Get all recent deletions within the time window."""
+        try:
+            with open(self.deleted_messages_file, 'r', encoding='utf-8') as f:
+                logs = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return []
+        
+        cutoff_time = datetime.now() - timedelta(hours=hours)
+        recent_deletions = []
+        
+        for log in logs:
+            try:
+                if log.get("deleted_at") and datetime.fromisoformat(log["deleted_at"]) >= cutoff_time:
+                    recent_deletions.append(log)
+            except (ValueError, KeyError, TypeError):
+                continue
+        
+        recent_deletions.sort(key=lambda x: x.get("deleted_at", ""), reverse=True)
+        return recent_deletions
+    # --- END OF RESTORED METHOD ---
 
-    # --------------------------------------------------------------------------
+    ############################################################################
     # ATTACHMENT HANDLING
-    # --------------------------------------------------------------------------
+    ############################################################################
 
     async def download_attachment(self, attachment: discord.Attachment, message_id: int) -> Dict[str, Any]:
         """Downloads and saves an attachment, respecting settings."""
         if not bot_settings.get("save_deleted_attachments", True):
-            return {"saved": False, "filename": attachment.filename, "reason": "Attachment saving is disabled in settings."}
+            return {"saved": False, "filename": attachment.filename, "reason": "Attachment saving is disabled."}
         
         max_size = bot_settings.get("max_attachment_size_mb", 50) * 1024 * 1024
         if attachment.size > max_size:

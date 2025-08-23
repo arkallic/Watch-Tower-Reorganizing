@@ -1,3 +1,16 @@
+# main.py
+"""
+      ,   ,
+     /////
+    /////       Watch Tower
+   |~~~|        ========================================================
+   |[] |        An advanced, AI-powered moderation bot for Discord.
+  /_____\       Features real-time ModString evaluation via Watch Tower Studio,
+   |   |        a Dashboard, comprehensive logging, and powerful moderation tools.
+   |   |
+  /_____\
+"""
+
 import os
 import asyncio
 from colorama import Fore, Style
