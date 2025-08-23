@@ -496,3 +496,77 @@ async def get_user_profile_data(user_id: int):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/channels/comprehensive-summary")
+async def get_comprehensive_channel_summary():
+    """
+    Provides a single, comprehensive payload for the entire Channels page,
+    including server-wide stats and detailed info for each channel.
+    """
+    if not bot or not bot.guilds:
+        raise HTTPException(status_code=503, detail="Bot not connected")
+
+    try:
+        guild = bot.guilds[0]
+        
+        all_cases = moderation_manager.get_all_cases()
+        all_flags = logger.get_all_flags() if hasattr(logger, 'get_all_flags') else []
+        channel_message_counts = activity_tracker.get_channel_message_counts(days_back=30)
+        recent_deletions = deleted_message_logger.get_recent_deletions(24) if hasattr(deleted_message_logger, 'get_recent_deletions') else []
+        
+        from core.settings import bot_settings
+        watched_channel_ids = bot_settings.get("watch_channels", [])
+
+        overview_stats = {
+            "total_text_channels": len(guild.text_channels),
+            "total_messages_30d": sum(channel_message_counts.values()),
+            "total_ai_flags_30d": len([f for f in all_flags if datetime.fromisoformat(f['timestamp'].replace('Z','')) >= datetime.now() - timedelta(days=30)]),
+            "total_cases": len(all_cases),
+            "total_deletions_24h": len(recent_deletions),
+            "action_breakdown": [{"name": k, "value": v} for k, v in Counter(c.get("action_type", "unknown") for c in all_cases).items()],
+            "severity_breakdown": [{"name": k, "value": v} for k, v in Counter(c.get("severity", "Low") for c in all_cases).items()]
+        }
+
+        processed_channels = []
+        for channel in guild.text_channels:
+            ch_id_str = str(channel.id)
+            channel_cases = [c for c in all_cases if str(c.get("channel_id")) == ch_id_str]
+            channel_flags = [f for f in all_flags if str(f.get("channel_id")) == ch_id_str]
+            channel_deletions = [d for d in recent_deletions if str(d.get("channel_id")) == ch_id_str]
+            message_count = channel_message_counts.get(ch_id_str, 0)
+            case_count = len(channel_cases)
+            
+            # NEW: Calculate most active moderators for THIS channel
+            mod_counts = Counter(c.get("moderator_name") for c in channel_cases if c.get("moderator_name"))
+            most_active_mods = [{"name": name, "count": count} for name, count in mod_counts.most_common(3)]
+            
+            processed_channels.append({
+                "id": ch_id_str, "name": channel.name, "category": channel.category.name if channel.category else "Uncategorized",
+                "topic": channel.topic, "is_nsfw": channel.is_nsfw(), "slowmode_delay": channel.slowmode_delay,
+                "is_watched": channel.id in watched_channel_ids, "message_count": message_count,
+                "case_count": case_count, "open_case_count": len([c for c in channel_cases if c.get("status") == "Open"]),
+                "flag_count": len(channel_flags), "deletion_count": len(channel_deletions),
+                "problem_rate": round((case_count / message_count) * 1000, 1) if message_count > 50 else 0,
+                "cases": channel_cases, "recent_flags": sorted(channel_flags, key=lambda x: x['timestamp'], reverse=True)[:5],
+                "recent_deletions": channel_deletions,
+                "most_active_mods": most_active_mods # Add the new data to the payload
+            })
+
+        live_voice_channels = [{"name": vc.name, "connected_users": len(vc.members)} for vc in guild.voice_channels]
+
+        return {
+            "overview": overview_stats,
+            "channels_by_category": group_channels_by_category(processed_channels),
+            "voice_channels": live_voice_channels
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+def group_channels_by_category(channels: list) -> dict:
+    grouped = {}
+    for channel in channels:
+        category = channel.get("category", "Uncategorized")
+        if category not in grouped: grouped[category] = []
+        grouped[category].append(channel)
+    return grouped
