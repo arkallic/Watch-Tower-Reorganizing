@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { 
-  MagnifyingGlassIcon, ArrowPathIcon, TrashIcon, UserGroupIcon, EyeIcon, 
-  ArrowUturnLeftIcon, SpeakerWaveIcon, InformationCircleIcon, FlagIcon, 
-  ChartPieIcon, ExclamationTriangleIcon, DocumentTextIcon 
+import {
+  MagnifyingGlassIcon, ArrowPathIcon, TrashIcon, UserGroupIcon, EyeIcon,
+  ArrowUturnLeftIcon, SpeakerWaveIcon, InformationCircleIcon, FlagIcon,
+  ChartPieIcon, ExclamationTriangleIcon, DocumentTextIcon
 } from '@heroicons/react/24/outline';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
@@ -237,8 +237,10 @@ const Channels = () => {
                     <button onClick={fetchData} className="btn-secondary flex items-center gap-2"><ArrowPathIcon className="w-5 h-5" /> Refresh</button>
                 </div>
             </div>
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-[calc(100vh-200px)]">
-                <div className="lg:col-span-1 card p-2 flex flex-col h-full">
+            {/* REMOVED fixed height from grid. The grid will now wrap its content. */}
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                {/* THE FIX: Added a fixed height to THIS column only. */}
+                <div className="lg:col-span-1 card p-2 flex flex-col h-[calc(100vh-240px)]">
                     <div className="relative p-2"><MagnifyingGlassIcon className="absolute left-5 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" /><input type="text" placeholder="Search channels..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} className="input w-full pl-10"/></div>
                     
                     <div className="px-3 pt-2 pb-3 border-b border-gray-700/50 space-y-2">
@@ -260,8 +262,8 @@ const Channels = () => {
                             </select>
                         </div>
                     </div>
-
-                    <div className="flex-1 overflow-y-auto pr-2">
+                    
+                    <div className="flex-1 overflow-y-auto pr-2 min-h-0">
                         {Object.entries(sortedAndFilteredChannels).map(([category, channels]) => (
                             <div key={category}>
                                 <h3 className="text-xs font-bold uppercase text-gray-500 px-3 pt-4 pb-2">{category}</h3>
@@ -281,7 +283,8 @@ const Channels = () => {
                         ))}
                     </div>
                 </div>
-                <div className="lg:col-span-3 card bg-black/30 overflow-y-auto h-full">
+                {/* This right-side column now has no height restrictions and will grow with its content. */}
+                <div className="lg:col-span-3 card bg-black/30">
                     <div className="p-6">
                       {selectedChannel ? <ChannelDetails channel={selectedChannel} onBack={() => setSelectedChannelId(null)} /> : <ChannelOverview overview={channelData?.overview || {}} textChannels={Object.values(channelData?.channels_by_category || {}).flat()} voiceChannels={channelData?.voice_channels || []} />}
                     </div>
