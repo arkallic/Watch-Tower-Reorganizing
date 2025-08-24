@@ -220,6 +220,46 @@ async def get_user_profile_page_data(user_id: int):
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to fetch user profile data: {str(e)}")
 
+@app.get("/api/pagedata/cohorts")
+async def get_cohorts_page_data():
+    """
+    Proxies the request to the bot's comprehensive cohort analysis endpoint.
+    """
+    async with httpx.AsyncClient(timeout=60.0) as client: # Increased timeout for potentially long calculation
+        try:
+            # This line calls the "Engine Room" where the real work happens
+            response = await client.get(f"{BOT_API_URL}/cohorts/all")
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(status_code=e.response.status_code, detail=e.response.json().get("detail"))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to fetch cohort data: {str(e)}")
+
+@app.get("/api/pagedata/timeline")
+async def get_timeline_page_data(request: Request):
+    """
+    Proxies requests to the bot's audit log endpoint, passing along any
+    pagination or filter parameters.
+    """
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            # Forward all query parameters from the frontend request
+            params = request.query_params
+            # The bot will have an endpoint at /audit/logs (we'll create this in the bot's code)
+            response = await client.get(f"{BOT_API_URL}/audit/logs", params=params)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            # If the bot API returns an error, forward it to the frontend
+            raise HTTPException(status_code=e.response.status_code, detail=e.response.json().get("detail", "Error from bot API"))
+        except httpx.RequestError as exc:
+            # If the bot API is unreachable
+            raise HTTPException(status_code=502, detail=f"Error communicating with bot API: {exc}")
+        except Exception as e:
+            # For any other unexpected errors
+            raise HTTPException(status_code=500, detail=f"Error processing timeline page data: {str(e)}")
+
 @app.get("/api/pagedata/moderator-profile/{moderator_id}")
 async def get_moderator_profile_page_data(moderator_id: int):
     async with httpx.AsyncClient(timeout=30.0) as client:

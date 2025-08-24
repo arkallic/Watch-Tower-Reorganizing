@@ -18,6 +18,8 @@ import FirstTimeSetup from './setup/pages/FirstTimeSetup';
 import Channels from './pages/Channels';
 import Spotlight from './pages/Spotlight';
 import SpotlightGate from './spotlight-gate/SpotlightGate';
+import Timeline from './pages/Timeline';
+import Cohorts from './pages/Cohorts';
 
 
 function App() {
@@ -97,8 +99,10 @@ return (
                     <Route path="/cases" element={<Cases />} />
                     <Route path="/moderators" element={<Moderators />} />
                     <Route path="/moderators/:moderatorId" element={<ModeratorProfile />} />
+                    <Route path="/cohorts" element={<Cohorts />} />
                     <Route path="/spotlight" element={<Spotlight />} />
                     <Route path="/channels" element={<Channels />} />
+                    <Route path="/timeline" element={<Timeline />} />
                     <Route path="/analytics" element={<Analytics />} />
                     <Route path="/reports" element={<Reports />} />
                     <Route path="/attachments" element={<AttachmentViewer />} />

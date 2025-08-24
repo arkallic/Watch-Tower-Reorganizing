@@ -15,10 +15,12 @@ import {
   LightBulbIcon,
   FolderIcon,
   ChevronDownIcon,
-  UserGroupIcon
+  UserGroupIcon,
+  ClockIcon, // <-- Import new icon
+  ArchiveBoxIcon
 } from '@heroicons/react/24/outline';
 
-// Navigation structure with Analytics moved under Moderation
+// Navigation structure with Timeline added to Moderation
 const navigation = [
   // 1. Main View
   { name: 'Dashboard', href: '/', icon: HomeIcon },
@@ -29,6 +31,7 @@ const navigation = [
     children: [
       { name: 'Analytics', href: '/analytics', icon: ChartBarIcon },
       { name: 'Cases', href: '/cases', icon: ScaleIcon },
+      { name: 'Timeline', href: '/timeline', icon: ClockIcon }, // <-- ADDED
       { name: 'Channels', href: '/channels', icon: ChatBubbleLeftRightIcon },
       { name: 'Spotlight', href: '/spotlight', icon: LightBulbIcon },
       { name: 'Search', href: '/search', icon: MagnifyingGlassIcon },
@@ -41,6 +44,7 @@ const navigation = [
     children: [
       { name: 'Users', href: '/users', icon: UsersIcon },
       { name: 'Moderators', href: '/moderators', icon: ShieldCheckIcon },
+      { name: 'Cohorts', href: '/cohorts', icon: ArchiveBoxIcon }
     ]
   },
   // 4. Resources Dropdown (Assets)

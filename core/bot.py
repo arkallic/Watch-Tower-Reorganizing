@@ -1,4 +1,3 @@
-# core/bot.py
 import discord
 from discord.ext import commands
 from typing import Dict, Any
@@ -63,23 +62,17 @@ class WatchTowerBot(commands.Bot):
         self.service_check_task = asyncio.create_task(self.service_monitor_loop())
     
     async def on_message(self, message: discord.Message):
-        """Handle incoming messages."""
+        """
+        Handles incoming messages FOR COMMANDS ONLY.
+        All other message processing (activity tracking, AI moderation) is now
+        handled by the on_message event listener in main.py for better organization.
+        """
+        # We still need to ignore bots to prevent loops.
         if message.author.bot:
             return
         
-        # Track all message activity
-        if activity_tracker := self.get_dependency('activity_tracker'):
-            await activity_tracker.track_message_activity(
-                message.author.id, message.channel.id,
-                message.guild.id if message.guild else 0,
-                len(message.content), bool(message.attachments),
-                bool(message.embeds), len(message.mentions)
-            )
-        
-        # Process message for AI moderation
-        await self._process_ai_moderation(message)
-        
-        # Process any application commands
+        # This line is ESSENTIAL for your slash commands to be recognized and executed.
+        # The discord.py library looks for this specific method to be called.
         await self.process_commands(message)
 
     async def close(self):
@@ -115,30 +108,7 @@ class WatchTowerBot(commands.Bot):
             except Exception:
                 await asyncio.sleep(30)
     
-    async def _process_ai_moderation(self, message: discord.Message):
-        """Process message through AI moderation."""
-        try:
-            from core.settings import bot_settings
-            if not bot_settings.get("ai_enabled", False): return
-            
-            watch_scope = bot_settings.get("watch_scope", "specific_channels")
-            watch_channels = bot_settings.get("watch_channels", [])
-            
-            if watch_scope == "specific_channels" and message.channel.id not in watch_channels:
-                return
-            
-            if (ollama := self.get_dependency('ollama')) and (logger := self.get_dependency('logger')):
-                analysis = await ollama.analyze_message(message.content, message.author.id, message.channel.id)
-                if analysis.get('should_flag', False):
-                    await logger.log_flagged_message(
-                        message.author.id, message.author.name, message.author.display_name,
-                        message.content, message.created_at, message.jump_url,
-                        confidence=analysis.get('confidence', 0), flags=analysis.get('flags', {}),
-                        ai_explanation=analysis.get('reasoning', ''), channel_id=message.channel.id,
-                        channel_name=message.channel.name
-                    )
-        except Exception as e:
-            print(f"{Fore.RED}❌ AI moderation error: {e}{Style.RESET_ALL}")
+    # NOTE: The _process_ai_moderation method has been moved to the on_message listener in main.py
             
     async def check_service_availability(self, url: str, timeout: float = 2.0) -> bool:
         """Check if a service is available."""
@@ -181,7 +151,6 @@ class WatchTowerBot(commands.Bot):
         else:
             print(f"   ├─ Ollama AI: {Fore.YELLOW}Not Configured{Style.RESET_ALL}")
         
-        # ... You can add other integrations here ...
         print(f"   └─ All integrations checked.")
         print()
 
